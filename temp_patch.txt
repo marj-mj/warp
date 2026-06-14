@@ -1,0 +1,16 @@
+﻿--- a/crates/warp_gateway_wrapper/src/launcher/endpoint_store.rs
++++ b/crates/warp_gateway_wrapper/src/launcher/endpoint_store.rs
+@@ -5,9 +5,9 @@
+ use directories::ProjectDirs;
+ use uuid::Uuid;
+ use warp_core::AppId;
+ 
+-use crate::config::{EndpointConfig, WrapperConfig};
+-use crate::windows_secure_storage::WindowsSecureStorage;
+-use crate::windows_user_preferences::WindowsUserPreferences;
++use crate::launcher::config::{EndpointConfig, WrapperConfig};
++use crate::launcher::platform::WindowsSecureStorage;
++use crate::launcher::platform::WindowsUserPreferences;
+ 
+ const API_KEYS_STORAGE_KEY: &str = "AiApiKeys";
+ const PREFERRED_AGENT_MODE_LLM_ID_KEY: &str = "PreferredAgentModeLLMId";

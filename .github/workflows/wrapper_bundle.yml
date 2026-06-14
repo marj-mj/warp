@@ -1,0 +1,97 @@
+name: Warp Gateway Wrapper Bundle
+
+on:
+  pull_request:
+    paths:
+      - "crates/warp_gateway_wrapper/**"
+      - ".github/workflows/wrapper_bundle.yml"
+      - ".github/actions/prepare_environment/**"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Warp channel to seed into the generated wrapper config.
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - preview
+          - dev
+          - local
+          - oss
+          - integration
+
+env:
+  CARGO_TERM_COLOR: always
+  WRAPPER_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'stable' }}
+
+jobs:
+  bundle:
+    name: Build Wrapper Bundle (Windows)
+    runs-on: windows-latest-large
+    timeout-minutes: 45
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare environment
+        uses: ./.github/actions/prepare_environment
+        with:
+          target_os: windows
+          cache_key: wrapper-bundle
+          is_self_hosted: false
+
+      - name: Build wrapper binary
+        id: build_wrapper
+        shell: pwsh
+        run: |
+          $wrapperExe = .\crates\warp_gateway_wrapper\scripts\Build-Wrapper.ps1 -OutputDir .\dist
+          "wrapper_exe=$wrapperExe" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare distributable bundle
+        shell: pwsh
+        run: |
+          .\crates\warp_gateway_wrapper\scripts\Prepare-Bundle.ps1 `
+            -WrapperExe "${{ steps.build_wrapper.outputs.wrapper_exe }}" `
+            -GatewayExe "${{ steps.build_wrapper.outputs.wrapper_exe }}" `
+            -WarpBinaryPath "${{ steps.build_wrapper.outputs.wrapper_exe }}" `
+            -OutputDir .\bundle `
+            -Channel "${{ env.WRAPPER_CHANNEL }}" `
+            -ReportPath .\bundle\bundle-check.json `
+            -Force
+
+      - name: Publish bundle summary
+        shell: pwsh
+        run: |
+          $reportPath = Join-Path $PWD "bundle\bundle-check.json"
+          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+
+          @"
+          ## Warp Gateway Wrapper Bundle
+
+          - Channel: `${{ env.WRAPPER_CHANNEL }}`
+          - Bundle status: $($report.ok)
+          - Wrapper executable: `$($report.wrapper_executable)`
+          - Config path: `$($report.config_path)`
+          - Warp binary: `$($report.warp_binary)`
+          - Gateway command: `$($report.gateway_command)`
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+          if ($report.issues.Count -gt 0) {
+            "### Issues" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            foreach ($issue in $report.issues) {
+              "- $issue" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            }
+          }
+
+      - name: Upload bundle-check report artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: warp-gateway-wrapper-bundle-report-${{ env.WRAPPER_CHANNEL }}
+          path: bundle/bundle-check.json
+
+      - name: Upload wrapper bundle artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: warp-gateway-wrapper-bundle-${{ env.WRAPPER_CHANNEL }}
+          path: bundle

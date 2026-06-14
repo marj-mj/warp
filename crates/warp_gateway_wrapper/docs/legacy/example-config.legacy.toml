@@ -1,0 +1,31 @@
+[warp]
+channel = "stable"
+
+[endpoint]
+name = "Managed Gateway"
+url = "http://127.0.0.1:8787/v1"
+api_key_env = "MANAGED_GATEWAY_TOKEN"
+preferred_model_slug = "gpt-4.1"
+
+[[endpoint.models]]
+slug = "gpt-4.1"
+alias = "Gateway GPT-4.1"
+
+[gateway]
+command = "managed-gateway.exe"
+args = ["--port", "8787"]
+healthcheck_url = "http://127.0.0.1:8787/healthz"
+startup_timeout_secs = 30
+
+# --- Agent server (OZ-compatible) auth ---
+# The `serve` subcommand runs the OZ-compatible agent server at /agent/* with
+# authentication enabled by default. Tokens are configured via the
+# WARP_GATEWAY_TOKENS environment variable (comma-separated):
+#
+#   WARP_GATEWAY_TOKENS="alice:tok_alice:privileged,bob:tok_bob"
+#
+# Each entry is `uid:token[:privileged]`. A privileged identity may use any tool
+# (including shell + filesystem); a non-privileged identity only gets basic tools.
+# For local development you can bypass auth entirely:
+#
+#   warp-gateway-wrapper serve --no-auth

@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "warp_gateway_launcher"
 version = "0.1.0"
 edition = "2021"
@@ -13,14 +13,11 @@ path = "src/main.rs"
 [dependencies]
 warp_gateway_wrapper = { path = "../warp_gateway_wrapper" }
 
-# UI: eframe with the default glow (OpenGL) backend — lighter + portable on Windows.
 eframe = "0.29"
 egui = "0.29"
 
-# Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
 
-# Logging
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 

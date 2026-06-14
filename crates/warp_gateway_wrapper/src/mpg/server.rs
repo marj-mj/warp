@@ -87,7 +87,8 @@ impl MpgServer {
 
     pub async fn run(self) -> Result<(), std::io::Error> {
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
-        self.log_listening();
+        let bound_addr = listener.local_addr().unwrap_or(self.addr);
+        self.log_listening(bound_addr);
         axum::serve(listener, self.build_router()).await
     }
 
@@ -97,21 +98,47 @@ impl MpgServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        let listener = tokio::net::TcpListener::bind(self.addr).await?;
-        self.log_listening();
-        axum::serve(listener, self.build_router())
-            .with_graceful_shutdown(shutdown)
-            .await
+        self.run_with_shutdown_signal(shutdown, None).await
     }
 
-    fn log_listening(&self) {
+    /// Run until shutdown resolves and optionally report whether the listener
+    /// bound successfully before serving requests.
+    pub async fn run_with_shutdown_signal<F>(
+        self,
+        shutdown: F,
+        ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, String>>>,
+    ) -> Result<(), std::io::Error>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        match tokio::net::TcpListener::bind(self.addr).await {
+            Ok(listener) => {
+                let bound_addr = listener.local_addr().unwrap_or(self.addr);
+                if let Some(ready_tx) = ready_tx {
+                    let _ = ready_tx.send(Ok(bound_addr));
+                }
+                self.log_listening(bound_addr);
+                axum::serve(listener, self.build_router())
+                    .with_graceful_shutdown(shutdown)
+                    .await
+            }
+            Err(err) => {
+                if let Some(ready_tx) = ready_tx {
+                    let _ = ready_tx.send(Err(err.to_string()));
+                }
+                Err(err)
+            }
+        }
+    }
+
+    fn log_listening(&self, bound_addr: SocketAddr) {
         let auth_state = if self.state.config.auth_token.is_empty() {
             "open"
         } else {
             "configured"
         };
         tracing::info!(
-            addr = %self.addr,
+            addr = %bound_addr,
             upstream = %self.state.config.provider.base_url,
             adapter = self.state.config.provider.adapter.as_str(),
             wire_api = self.state.config.provider.wire_api.as_str(),

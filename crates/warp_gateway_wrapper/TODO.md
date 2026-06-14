@@ -336,3 +336,49 @@ Nguyen tac (giu nguyen tu warp-oss):
   2. UI Cloudflared group: giu tunnel handle, poll public URL moi frame, hien Public URL + Copy /v1; Stop tunnel.
   3. UI Custom endpoint: dung public_url (HTTPS tunnel) khi co; canh bao mau vang khi chua co tunnel.
 - Tests: 13 PASS. Release binary rebuild OK.
+### Phương án 1 - "Launch all" [DONE 2026-06-14]
+- LaunchPhase state machine: Idle / StartingGateway / StartingTunnel / WaitingPublicUrl / SpawningWarp / Done / Failed.
+- Bar Launch all hien o moi tab; mot click chay tuan tu: start gateway -> start tunnel -> doi public URL -> copy endpoint JSON vao clipboard -> spawn Warp.
+- spawn_warp(path) launch Warp khong env (MPG dung custom endpoint, khong can env override).
+- Cancel/Reset button. Mau trang thai: vang khi busy, xanh khi Done, do khi Failed.
+- Khong dung source Warp.
+- Tests: 13 PASS.
+### UI redesign + hide console [DONE 2026-06-14]
+- Console window: #![windows_subsystem = "windows"] cho release; child process (cloudflared/winget) spawn voi CREATE_NO_WINDOW (no_window helper).
+- UI Huong A (one-screen dashboard): bo tabs.
+  - Status row 3 den: Gateway / Tunnel / Warp.
+  - Provider: dropdown chon + Edit/New (form gap khi khong sua).
+  - Launch all: nut lon + progress bar + label trang thai mau.
+  - Warp endpoint: URL + Copy config JSON / Copy URL + canh bao khi chua co HTTPS.
+  - Advanced (gap mac dinh): host/port/adapter/wire_api/force_model/safe-mode + Start/Stop gateway, Start/Stop tunnel, Install winget, Re-detect.
+  - Logs (gap mac dinh).
+- Theme dark; window 520x600.
+- Tests: 13 PASS, 0 warning.
+### UI restyle Huong 1 [DONE 2026-06-14]
+- theme.rs: palette dark hien dai (BG #14171c, surface #1d222b, accent #4d8dff), rounding, spacing rong.
+- Font: load Segoe UI (Windows) + Consolas mono, fallback default; text size to hon (body 14.5, heading 20).
+- Layout card: moi section trong card_frame (surface + border + rounding 10 + padding 14).
+- Nut Launch all accent xanh noi bat (170x38, text trang); progress bar accent.
+- Header 2 mau; status dot mau theme.
+- egui 0.29 API: Rounding/.rounding/Margin::same(f32).
+- Tests: 13 PASS, 0 warning. Release rebuilt.
+### Cross-platform (Windows + macOS) [DONE 2026-06-14]
+- Xoa hoan toan src/launcher/ deprecated khoi warp_gateway_wrapper.
+- Cargo.toml: bo deps Windows-only (windows, windows-registry, winreg cfg block) va deps thua (ai, warp_core, toml).
+- Gateway crate gio doc lap voi Warp ecosystem; build trên macOS không bị warp_core/ai keo.
+- Launcher: Windows-specific code (no_window/CommandExt/creation_flags) bao trong #[cfg(windows)]; #![windows_subsystem] cung chi tac dong Windows.
+- detect_warp da co nhanh macOS (/Applications/Warp.app/...) va Linux.
+- detect_cloudflared chi co nhanh Windows; can them macOS/Linux khi build mac.
+- Tests: 103 wrapper + 13 launcher PASS, 0 warning. Release rebuilt.
+
+### Text color fix [DONE 2026-06-14]
+- Bo override_text_color = Some(TEXT) — cho per-widget/RichText color hoat dong.
+- TEXT pure white #ffffff, TEXT_WEAK #c8ced8 (do tuong phan cao hon).
+- pixels_per_point 1.2 cho text crisper tren high-DPI.
+### Tauri (Phuong an 2) ABORTED -> quay ve egui (Phuong an B) [2026-06-14]
+- Tauri v2 trong workspace wrap gap conflict semver khong giai duoc: tauri 2.x keo tauri-runtime 2.11.2 nhung tauri-runtime-wry 2.9.3 -> trait mismatch (eval_script_with_callback). Pin xuong gap webkit2gtk conflict o workspace level.
+- Ket luan: khong kha thi trong workspace nay (deps Warp rang buoc). Da quay ve egui.
+- egui launcher khoi phuc + polish: theme dark (BG #0b0d12, accent #4d8dff), font he thong, pixels_per_point 1.25, card layout, Launch all accent, Advanced + Logs collapsing.
+- Xoa frontend/ Tauri thua, Cargo.lock sach (0 tauri entries).
+- Tests: 13 PASS. Release rebuilt (12.1 MB).
+- Neu sau nay van muon Tauri: tach launcher ra workspace rieng (ngoai wrap).

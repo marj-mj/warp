@@ -7,11 +7,23 @@
 //! This keeps Warp updatable.
 
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 
 use serde_json::json;
+
+/// On Windows, prevent a child process from spawning its own console window.
+/// No-op on other platforms.
+#[allow(unused_variables)]
+fn no_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW
+        cmd.creation_flags(0x0800_0000);
+    }
+}
 
 /// Candidate Warp executable names across channels (Windows-focused; the launcher
 /// targets Windows first, matching the wrapper's platform support).
@@ -48,6 +60,44 @@ fn warp_binary_candidates() -> Vec<PathBuf> {
 /// Detect an installed Warp binary, returning the first existing candidate.
 pub fn detect_warp() -> Option<PathBuf> {
     warp_binary_candidates().into_iter().find(|path| path.is_file())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerUrlOverrideSupport {
+    Supported,
+    Unsupported,
+    Unknown,
+}
+
+/// Best-effort classification of whether the detected Warp build is likely to
+/// honor the `WARP_*SERVER_URL` overrides needed by proxy mode.
+pub fn detect_server_url_override_support(path: &Path) -> ServerUrlOverrideSupport {
+    let normalized = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+
+    if normalized.contains("warpdev")
+        || normalized.contains("warplocal")
+        || normalized.contains("warpintegration")
+        || normalized.contains("/target/debug/")
+        || normalized.contains("/target/release/")
+        || normalized.ends_with("/dev")
+        || normalized.ends_with("/local")
+        || normalized.ends_with("/integration")
+    {
+        return ServerUrlOverrideSupport::Supported;
+    }
+
+    if normalized.contains("warppreview")
+        || normalized.contains("/programs/warp/")
+        || normalized.contains("/warp.app/contents/macos/stable")
+        || normalized.contains("/warp.app/contents/macos/preview")
+        || normalized.ends_with("/usr/bin/warp-terminal")
+        || normalized.ends_with("/usr/local/bin/warp-terminal")
+        || normalized.contains("warp-oss")
+    {
+        return ServerUrlOverrideSupport::Unsupported;
+    }
+
+    ServerUrlOverrideSupport::Unknown
 }
 
 /// Launch `winget install Warp.Warp` in a detached console. Returns an error
@@ -93,9 +143,43 @@ pub fn endpoint_config_json(name: &str, endpoint_url: &str, model: &str) -> Stri
 /// Spawn Warp with `WARP_SERVER_ROOT_URL` pointed at the proxy (only relevant
 /// for the transparent-proxy mode, not MPG). Read-only env injection; no source
 /// changes.
+#[allow(dead_code)] // wired by the proxy mode UI later
 pub fn spawn_warp_with_server_url(warp: &PathBuf, server_root_url: &str) -> Result<(), String> {
+    let ws_server_url = if let Some(rest) = server_root_url.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = server_root_url.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        server_root_url.to_string()
+    };
+    spawn_warp_with_proxy_urls(warp, server_root_url, &ws_server_url, &ws_server_url)
+}
+
+/// Launch Warp with the local proxy roots injected via environment variables.
+/// This remains read-only with respect to Warp's install and settings.
+pub fn spawn_warp_with_proxy_urls(
+    warp: &PathBuf,
+    server_root_url: &str,
+    ws_server_url: &str,
+    session_sharing_server_url: &str,
+) -> Result<(), String> {
     Command::new(warp)
         .env("WARP_SERVER_ROOT_URL", server_root_url)
+        .env("WARP_WS_SERVER_URL", ws_server_url)
+        .env(
+            "WARP_SESSION_SHARING_SERVER_URL",
+            session_sharing_server_url,
+        )
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("failed to launch Warp: {err}"))
+}
+
+/// Launch Warp normally (no env override). Used by "Launch all" since the
+/// Managed Provider Gateway flow relies on a custom endpoint configured inside
+/// Warp, not an env var.
+pub fn spawn_warp(warp: &PathBuf) -> Result<(), String> {
+    Command::new(warp)
         .spawn()
         .map(|_| ())
         .map_err(|err| format!("failed to launch Warp: {err}"))
@@ -124,6 +208,18 @@ pub fn detect_cloudflared() -> Option<PathBuf> {
             candidates.push(base.join("cloudflared\\cloudflared.exe"));
         }
     }
+
+    // Common macOS / Linux locations (Homebrew, system bins).
+    for path in [
+        "/opt/homebrew/bin/cloudflared", // Apple Silicon Homebrew
+        "/usr/local/bin/cloudflared",    // Intel Homebrew / manual
+        "/usr/bin/cloudflared",          // Linux package
+    ] {
+        candidates.push(PathBuf::from(path));
+    }
+
+    // Fall back to PATH lookup via which/where is overkill here; the explicit
+    // env override covers custom installs.
     candidates.into_iter().find(|path| path.is_file())
 }
 
@@ -138,11 +234,21 @@ impl CloudflaredTunnel {
     pub fn try_url(&self) -> Option<String> {
         self.url_rx.try_recv().ok()
     }
+
+    /// Non-blocking: returns the child exit status once the process finishes.
+    pub fn try_exit_status(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
+        self.child
+            .try_wait()
+            .map_err(|err| format!("failed to query cloudflared status: {err}"))
+    }
 }
 
 impl Drop for CloudflaredTunnel {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        if self.child.try_wait().ok().flatten().is_none() {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
     }
 }
 
@@ -150,10 +256,13 @@ impl Drop for CloudflaredTunnel {
 /// to extract the public trycloudflare.com URL.
 pub fn start_cloudflared_tunnel(cloudflared: &PathBuf, port: u16) -> Result<CloudflaredTunnel, String> {
     let url = format!("http://127.0.0.1:{port}");
-    let mut child = Command::new(cloudflared)
+    let mut command = Command::new(cloudflared);
+    command
         .args(["tunnel", "--url", &url])
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    no_window(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|err| format!("failed to start cloudflared: {err}"))?;
 
@@ -209,8 +318,10 @@ pub fn install_cloudflared_via_winget() -> Result<(), String> {
 }
 
 fn spawn_detached(program: &str, args: &[&str]) -> Result<(), String> {
-    Command::new(program)
-        .args(args)
+    let mut command = Command::new(program);
+    command.args(args);
+    no_window(&mut command);
+    command
         .spawn()
         .map(|_| ())
         .map_err(|err| format!("failed to spawn {program}: {err}"))
@@ -260,5 +371,21 @@ mod tests {
     fn warp_candidates_non_empty() {
         // At least the platform default locations should be generated.
         assert!(!warp_binary_candidates().is_empty());
+    }
+
+    #[test]
+    fn detect_override_support_marks_dev_and_release_paths() {
+        assert_eq!(
+            detect_server_url_override_support(Path::new(
+                "C:/Users/test/AppData/Local/Programs/WarpDev/warp.exe"
+            )),
+            ServerUrlOverrideSupport::Supported
+        );
+        assert_eq!(
+            detect_server_url_override_support(Path::new(
+                "C:/Users/test/AppData/Local/Programs/Warp/warp.exe"
+            )),
+            ServerUrlOverrideSupport::Unsupported
+        );
     }
 }

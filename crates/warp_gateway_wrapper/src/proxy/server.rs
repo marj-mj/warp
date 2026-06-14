@@ -11,7 +11,7 @@ use axum::Router;
 
 use super::config::ProxyConfig;
 use super::http::forward_handler;
-use super::ws::ws_handler;
+use super::ws::{ws_handler, UpstreamWsHeaders};
 
 /// Shared state for proxy handlers: configured upstream + a reusable HTTP
 /// client.
@@ -63,18 +63,53 @@ impl ProxyServer {
 
     pub async fn run(self) -> Result<(), std::io::Error> {
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
+        let bound_addr = listener.local_addr().unwrap_or(self.addr);
+        self.log_listening(bound_addr);
+        axum::serve(listener, self.build_router()).await
+    }
+
+    /// Run until shutdown resolves and optionally report readiness after the
+    /// listener has successfully bound.
+    pub async fn run_with_shutdown_signal<F>(
+        self,
+        shutdown: F,
+        ready_tx: Option<tokio::sync::oneshot::Sender<Result<SocketAddr, String>>>,
+    ) -> Result<(), std::io::Error>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        match tokio::net::TcpListener::bind(self.addr).await {
+            Ok(listener) => {
+                let bound_addr = listener.local_addr().unwrap_or(self.addr);
+                if let Some(ready_tx) = ready_tx {
+                    let _ = ready_tx.send(Ok(bound_addr));
+                }
+                self.log_listening(bound_addr);
+                axum::serve(listener, self.build_router())
+                    .with_graceful_shutdown(shutdown)
+                    .await
+            }
+            Err(err) => {
+                if let Some(ready_tx) = ready_tx {
+                    let _ = ready_tx.send(Err(err.to_string()));
+                }
+                Err(err)
+            }
+        }
+    }
+
+    fn log_listening(&self, bound_addr: SocketAddr) {
         let token_status = if self.state.config.oz_token.is_empty() {
             "no-override"
         } else {
             "configured"
         };
         tracing::info!(
-            addr = %self.addr,
+            addr = %bound_addr,
             upstream = %self.state.config.upstream_http,
             oz_token = token_status,
             "transparent Warp proxy listening"
         );
-        axum::serve(listener, self.build_router()).await
     }
 }
 
@@ -100,10 +135,11 @@ async fn ws_dispatch_middleware(
         return next.run(request).await;
     }
 
+    let upstream_headers = UpstreamWsHeaders::from_request_headers(request.headers());
     let (mut parts, _body) = request.into_parts();
     let uri = parts.uri.clone();
     match WebSocketUpgrade::from_request_parts(&mut parts, &()).await {
-        Ok(upgrade) => ws_handler(State(state), upgrade, uri).await,
+        Ok(upgrade) => ws_handler(State(state), upgrade, uri, upstream_headers).await,
         Err(rejection) => rejection.into_response(),
     }
 }

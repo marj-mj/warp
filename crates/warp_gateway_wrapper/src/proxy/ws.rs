@@ -16,7 +16,7 @@ use axum::{
         ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
         State,
     },
-    http::{HeaderValue, StatusCode, Uri},
+    http::{HeaderMap, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 use futures_util::{SinkExt, StreamExt};
@@ -24,12 +24,34 @@ use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message as TungM
 
 use super::server::ProxyState;
 
+#[derive(Clone, Debug, Default)]
+pub struct UpstreamWsHeaders {
+    authorization: Option<HeaderValue>,
+    cookie: Option<HeaderValue>,
+    sec_websocket_protocol: Option<HeaderValue>,
+    user_agent: Option<HeaderValue>,
+}
+
+impl UpstreamWsHeaders {
+    pub fn from_request_headers(headers: &HeaderMap) -> Self {
+        Self {
+            authorization: headers.get(axum::http::header::AUTHORIZATION).cloned(),
+            cookie: headers.get(axum::http::header::COOKIE).cloned(),
+            sec_websocket_protocol: headers
+                .get(axum::http::header::SEC_WEBSOCKET_PROTOCOL)
+                .cloned(),
+            user_agent: headers.get(axum::http::header::USER_AGENT).cloned(),
+        }
+    }
+}
+
 /// Axum handler for the proxy WebSocket route. Upgrades the client connection
 /// and spawns a relay against the upstream Warp WS endpoint.
 pub async fn ws_handler(
     State(state): State<Arc<ProxyState>>,
     ws: WebSocketUpgrade,
     uri: Uri,
+    upstream_headers: UpstreamWsHeaders,
 ) -> Response {
     let upstream_url = match build_upstream_ws_url(&state, &uri) {
         Ok(url) => url,
@@ -40,7 +62,7 @@ pub async fn ws_handler(
     };
 
     ws.on_upgrade(move |socket| async move {
-        if let Err(err) = relay(socket, upstream_url, state).await {
+        if let Err(err) = relay(socket, upstream_url, state, upstream_headers).await {
             tracing::warn!(error = %err, "ws relay terminated with error");
         }
     })
@@ -75,17 +97,14 @@ async fn relay(
     client_ws: WebSocket,
     upstream_url: String,
     state: Arc<ProxyState>,
+    upstream_headers: UpstreamWsHeaders,
 ) -> Result<(), String> {
     let mut request = upstream_url
         .as_str()
         .into_client_request()
         .map_err(|err| format!("invalid upstream URL: {err}"))?;
 
-    if !state.config.oz_token.is_empty() {
-        let value = HeaderValue::from_str(&format!("Bearer {}", state.config.oz_token))
-            .map_err(|err| format!("invalid OZ token header: {err}"))?;
-        request.headers_mut().insert(axum::http::header::AUTHORIZATION, value);
-    }
+    apply_upstream_headers(request.headers_mut(), &state.config.oz_token, &upstream_headers)?;
 
     let (upstream_ws, response) = tokio_tungstenite::connect_async(request)
         .await
@@ -170,3 +189,33 @@ fn tungstenite_to_axum(message: TungMessage) -> Option<AxumMessage> {
         TungMessage::Frame(_) => None,
     }
 }
+
+fn apply_upstream_headers(
+    headers: &mut HeaderMap,
+    override_token: &str,
+    upstream_headers: &UpstreamWsHeaders,
+) -> Result<(), String> {
+    if !override_token.is_empty() {
+        let value = HeaderValue::from_str(&format!("Bearer {override_token}"))
+            .map_err(|err| format!("invalid OZ token header: {err}"))?;
+        headers.insert(axum::http::header::AUTHORIZATION, value);
+    } else if let Some(value) = &upstream_headers.authorization {
+        headers.insert(axum::http::header::AUTHORIZATION, value.clone());
+    }
+
+    if let Some(value) = &upstream_headers.cookie {
+        headers.insert(axum::http::header::COOKIE, value.clone());
+    }
+    if let Some(value) = &upstream_headers.sec_websocket_protocol {
+        headers.insert(axum::http::header::SEC_WEBSOCKET_PROTOCOL, value.clone());
+    }
+    if let Some(value) = &upstream_headers.user_agent {
+        headers.insert(axum::http::header::USER_AGENT, value.clone());
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "ws_tests.rs"]
+mod tests;

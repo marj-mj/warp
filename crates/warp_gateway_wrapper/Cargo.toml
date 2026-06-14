@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ai.workspace = true
 anyhow.workspace = true
 async-stream.workspace = true
 async-trait = "0.1"
@@ -21,18 +20,11 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util.workspace = true
 tower.workspace = true
 tower-http = { version = "0.5", features = ["cors"] }
-toml = "0.8.13"
 tracing.workspace = true
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 sysinfo.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["v4", "v5", "serde"] }
-warp_core.workspace = true
-windows = { workspace = true, features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
-windows-registry.workspace = true
 
-
-[target.'cfg(windows)'.dependencies]
-winreg = '0.52'
 

@@ -19,10 +19,12 @@ pub enum GatewayStatus {
 }
 
 impl GatewayStatus {
+    #[allow(dead_code)]
     pub fn is_running(&self) -> bool {
         matches!(self, Self::Running { .. })
     }
 
+    #[allow(dead_code)]
     pub fn label(&self) -> String {
         match self {
             Self::Stopped => "stopped".to_string(),
@@ -86,18 +88,20 @@ impl GatewayController {
                 return;
             }
         };
-        let addr = server.addr().to_string();
-
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let (ready_tx, ready_rx) = oneshot::channel::<Result<std::net::SocketAddr, String>>();
         let status = self.status.clone();
 
         // Spawn the server task on the controller's runtime. Catch the run
-        // result so a bind failure surfaces as an Error status.
+        // result so a bind/runtime failure surfaces as an Error status.
         let join = self.runtime.spawn(async move {
             let result = server
-                .run_with_shutdown(async move {
+                .run_with_shutdown_signal(
+                    async move {
                     let _ = shutdown_rx.await;
-                })
+                    },
+                    Some(ready_tx),
+                )
                 .await;
             match result {
                 Ok(()) => {
@@ -111,11 +115,25 @@ impl GatewayController {
             }
         });
 
-        *self.status.lock().unwrap() = GatewayStatus::Running { addr };
-        self.instance = Some(RunningInstance {
-            shutdown: shutdown_tx,
-            join,
-        });
+        match self.runtime.block_on(async { ready_rx.await }) {
+            Ok(Ok(addr)) => {
+                *self.status.lock().unwrap() = GatewayStatus::Running {
+                    addr: addr.to_string(),
+                };
+                self.instance = Some(RunningInstance {
+                    shutdown: shutdown_tx,
+                    join,
+                });
+            }
+            Ok(Err(message)) => {
+                *self.status.lock().unwrap() = GatewayStatus::Error { message };
+            }
+            Err(_) => {
+                *self.status.lock().unwrap() = GatewayStatus::Error {
+                    message: "gateway exited before reporting readiness".to_string(),
+                };
+            }
+        }
     }
 
     /// Stop the running gateway, waiting for graceful shutdown. No-op if stopped.
@@ -138,44 +156,5 @@ impl Drop for GatewayController {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use warp_gateway_wrapper::mpg::{Adapter, ProviderConfig, WireApi};
-
-    fn test_config() -> GatewayConfig {
-        GatewayConfig::new(ProviderConfig {
-            name: "test".into(),
-            base_url: "https://example.com/v1".into(),
-            model: Some("m".into()),
-            wire_api: WireApi::Chat,
-            adapter: Adapter::OpenaiChat,
-            api_key: None,
-            env_key: None,
-        })
-    }
-
-    #[test]
-    fn start_then_stop_updates_status() {
-        let mut controller = GatewayController::new().unwrap();
-        assert_eq!(controller.status(), GatewayStatus::Stopped);
-
-        // Bind to an ephemeral port (0) to avoid conflicts.
-        controller.start("127.0.0.1", 0, test_config());
-        assert!(controller.is_running());
-        assert!(controller.status().is_running());
-
-        controller.stop();
-        assert!(!controller.is_running());
-        assert_eq!(controller.status(), GatewayStatus::Stopped);
-    }
-
-    #[test]
-    fn double_start_is_noop() {
-        let mut controller = GatewayController::new().unwrap();
-        controller.start("127.0.0.1", 0, test_config());
-        let first = controller.status();
-        controller.start("127.0.0.1", 0, test_config());
-        assert_eq!(controller.status(), first);
-        controller.stop();
-    }
-}
+#[path = "controller_tests.rs"]
+mod tests;

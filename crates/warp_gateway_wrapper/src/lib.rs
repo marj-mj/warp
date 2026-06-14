@@ -2,7 +2,6 @@ pub mod adapters;
 pub mod gateway;
 pub mod harness;
 pub mod http;
-pub mod launcher;
 pub mod protocol;
 pub mod providers;
 pub mod mpg;

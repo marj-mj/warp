@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { api, events } from "@/lib/tauri";
 import {
   GatewayStatus,
@@ -66,6 +66,7 @@ export function useLauncher() {
       events.onTunnelUrl((url) => patch({ publicUrl: url, message: `Public URL ready: ${url}` }))
     );
     unlistens.push(events.onTunnelError((msg) => patch({ message: msg })));
+    unlistens.push(events.onLauncherMessage((msg) => patch({ message: msg })));
 
     return () => {
       mounted.current = false;

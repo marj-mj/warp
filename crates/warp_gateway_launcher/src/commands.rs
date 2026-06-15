@@ -481,7 +481,8 @@ pub async fn start_launch_flow(
         tokio::time::sleep(Duration::from_millis(300)).await;
     };
 
-    // 4) Spawn Warp.
+    // 4) Persist Warp endpoint. If Warp is already running, leave the user's
+    // session untouched and let Warp pick up the change on the next launch.
     {
         let mut launch = state.launch.lock().await;
         launch.phase = LaunchPhase::SpawningWarp;
@@ -496,18 +497,10 @@ pub async fn start_launch_flow(
     };
     let endpoint_url = format!("{public_url}/v1");
     let warp = std::path::PathBuf::from(warp);
-    match crate::warp_setup::is_warp_running(&warp) {
-        Ok(true) => {
-            return fail(
-                &app,
-                &state,
-                "Warp is running. Exit Warp completely, then start the gateway flow again so the endpoint update can be loaded safely.",
-            )
-            .await;
-        }
-        Ok(false) => {}
+    let warp_running = match crate::warp_setup::is_warp_running(&warp) {
+        Ok(running) => running,
         Err(err) => return fail(&app, &state, err).await,
-    }
+    };
     if let Err(err) = crate::warp_setup::upsert_warp_gateway_endpoint(
         &warp,
         &provider.name,
@@ -516,6 +509,18 @@ pub async fn start_launch_flow(
         provider.model.trim(),
     ) {
         return fail(&app, &state, err).await;
+    }
+    if warp_running {
+        let mut launch = state.launch.lock().await;
+        launch.phase = LaunchPhase::PendingWarpRestart;
+        launch.started_gateway = false;
+        launch.started_tunnel = false;
+        emit_phase(&app, &launch.phase);
+        let _ = app.emit(
+            "launcher://message",
+            "Gateway saved to Warp. Restart Warp when ready to apply it.",
+        );
+        return Ok(());
     }
     match crate::warp_setup::spawn_warp(&warp) {
         Ok(()) => {
@@ -644,6 +649,19 @@ pub async fn detect_tools(state: State<'_, Arc<AppState>>) -> CmdResult<ToolPath
     };
     *state.tools.lock().await = tools.clone();
     Ok(tools)
+}
+
+/// Manual control: kill all running Warp processes, then relaunch Warp so it
+/// picks up the latest `AiApiKeys` on disk. The user explicitly opts in via UI.
+#[tauri::command]
+pub async fn restart_warp(state: State<'_, Arc<AppState>>) -> CmdResult<()> {
+    let warp = { state.tools.lock().await.warp.clone() };
+    let Some(warp) = warp else {
+        return Err("Warp not found - install it first".to_string());
+    };
+    let warp = std::path::PathBuf::from(warp);
+    crate::warp_setup::stop_warp(&warp)?;
+    crate::warp_setup::spawn_warp(&warp)
 }
 
 #[tauri::command]

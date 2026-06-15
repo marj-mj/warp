@@ -26,6 +26,7 @@ pub enum LaunchPhase {
     WaitingPublicUrl,
     SpawningWarp,
     Done,
+    PendingWarpRestart,
     Failed(String),
 }
 
@@ -38,6 +39,7 @@ impl LaunchPhase {
             Self::WaitingPublicUrl => 0.7,
             Self::SpawningWarp => 0.9,
             Self::Done => 1.0,
+            Self::PendingWarpRestart => 1.0,
             Self::Failed(_) => 0.0,
         }
     }

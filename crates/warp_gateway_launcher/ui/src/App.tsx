@@ -118,10 +118,16 @@ export default function App() {
           onSelect={(name) => {
             setSelectedName(name);
             setIsNew(false);
+            if (state.phase.kind === "done" || state.phase.kind === "pending_warp_restart") {
+              patch({ phase: { kind: "idle" }, progress: 0 });
+            }
           }}
           onNew={() => {
             setIsNew(true);
             setSelectedName(null);
+            if (state.phase.kind === "done" || state.phase.kind === "pending_warp_restart") {
+              patch({ phase: { kind: "idle" }, progress: 0 });
+            }
           }}
           gateway={state.gateway}
           proxy={state.proxy}
@@ -148,6 +154,15 @@ export default function App() {
                   onLaunch={onLaunch}
                   onCancel={() => api.cancelLaunch()}
                   onReset={() => api.resetLaunch()}
+                  onRestartWarp={async () => {
+                    try {
+                      await api.restartWarp();
+                      await api.resetLaunch();
+                      patch({ message: "Warp restarted with the latest gateway config." });
+                    } catch (e) {
+                      patch({ message: String(e) });
+                    }
+                  }}
                   onAddProvider={() => {
                     setIsNew(true);
                     setSelectedName(null);

@@ -61,6 +61,7 @@ export const api = {
   detectTools: () => invoke<ToolPaths>("detect_tools"),
   installWarp: () => invoke<void>("install_warp"),
   installCloudflared: () => invoke<void>("install_cloudflared"),
+  restartWarp: () => invoke<void>("restart_warp"),
 
   // Endpoint
   endpointUrl: (host: string, port: number) =>
@@ -90,6 +91,8 @@ export const events = {
     listen<ProbeResult>("probe://result", (e) => cb(e.payload)),
   onLogLine: (cb: (line: string) => void) =>
     listen<string>("logs://line", (e) => cb(e.payload)),
+  onLauncherMessage: (cb: (msg: string) => void) =>
+    listen<string>("launcher://message", (e) => cb(e.payload)),
 };
 
 export type { UnlistenFn };

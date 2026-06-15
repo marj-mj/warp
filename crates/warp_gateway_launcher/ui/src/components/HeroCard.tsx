@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Loader2, Play, RotateCcw, Rocket, X } from "lucide-react";
+﻿import { AlertTriangle, CheckCircle2, Loader2, Play, RotateCcw, Rocket, X } from "lucide-react";
 import { GatewayStatus, LaunchPhase } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -17,6 +17,7 @@ interface Props {
   onLaunch: () => void;
   onCancel: () => void;
   onReset: () => void;
+  onRestartWarp: () => void;
   onAddProvider: () => void;
 }
 
@@ -32,6 +33,8 @@ function phaseLabel(phase: LaunchPhase): string {
       return "Opening Warp...";
     case "done":
       return "Running";
+    case "pending_warp_restart":
+      return "Saved to Warp - restart Warp to apply";
     case "failed":
       return phase.message;
     default:
@@ -60,6 +63,7 @@ export function HeroCard(props: Props) {
 
   const failed = phase.kind === "failed";
   const done = phase.kind === "done";
+  const pending = phase.kind === "pending_warp_restart";
 
   return (
     <div
@@ -85,14 +89,14 @@ export function HeroCard(props: Props) {
                 !done && !failed && "text-text"
               )}
             >
-              {done ? "Gateway running" : failed ? "Launch failed" : "Managed Provider Gateway"}
+              {done ? "Gateway running" : pending ? "Restart Warp to apply" : failed ? "Launch failed" : "Managed Provider Gateway"}
             </h2>
           </div>
           <p className="mt-1 text-sm text-text-dim">{phaseLabel(phase)}</p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {!busy && !done && (
+          {!busy && !done && !pending && (
             <Button
               variant="primary"
               size="lg"
@@ -107,7 +111,12 @@ export function HeroCard(props: Props) {
               <X /> Cancel
             </Button>
           )}
-          {(done || failed) && (
+          {pending && (
+            <Button variant="primary" size="lg" onClick={props.onRestartWarp}>
+              <RotateCcw /> Restart Warp
+            </Button>
+          )}
+          {(done || failed || pending) && (
             <Button variant="secondary" size="lg" onClick={props.onReset}>
               <RotateCcw /> Reset
             </Button>
@@ -115,7 +124,7 @@ export function HeroCard(props: Props) {
         </div>
       </div>
 
-      {(busy || done) && (
+      {(busy || done || pending) && (
         <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
           <div
             className="h-full rounded-full bg-accent transition-all duration-500"
@@ -124,7 +133,7 @@ export function HeroCard(props: Props) {
         </div>
       )}
 
-      {done && (
+      {(done || pending) && (
         <div className="mt-5 rounded-lg border border-border bg-surface-2 p-4">
           <div className="mb-1 text-xs font-medium uppercase tracking-wider text-text-dim">
             Custom endpoint for Warp

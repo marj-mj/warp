@@ -421,6 +421,38 @@ pub fn spawn_warp(warp: &PathBuf) -> Result<(), String> {
         .map_err(|err| format!("failed to launch Warp: {err}"))
 }
 
+/// Best-effort: terminate every running Warp instance whose image name matches
+/// `warp`'s file name. Used by the "Restart Warp" manual control. Returns `Ok`
+/// if either no Warp processes were running or the kill commands completed
+/// without surfacing an error.
+#[cfg(windows)]
+pub fn stop_warp(warp: &Path) -> Result<(), String> {
+    let executable = warp
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Warp executable path has no file name".to_string())?;
+    let mut command = Command::new("taskkill");
+    command.args(["/F", "/IM", executable, "/T"]);
+    no_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| format!("failed to stop Warp: {err}"))?;
+    if !output.status.success() {
+        // Exit code 128 = "process not found", which is fine here.
+        if output.status.code() == Some(128) {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("failed to stop Warp: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn stop_warp(_warp: &Path) -> Result<(), String> {
+    Err("automatic Warp restart is currently supported on Windows only".to_string())
+}
+
 #[cfg(windows)]
 pub fn is_warp_running(warp: &Path) -> Result<bool, String> {
     let executable = warp

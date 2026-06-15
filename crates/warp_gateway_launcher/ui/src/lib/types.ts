@@ -71,6 +71,7 @@ export type LaunchPhaseKind =
   | "waiting_public_url"
   | "spawning_warp"
   | "done"
+  | "pending_warp_restart"
   | "failed";
 
 export type LaunchPhase =

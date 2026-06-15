@@ -1,4 +1,4 @@
-//! Tauri-based Managed Gateway Launcher.
+﻿//! Tauri-based Managed Gateway Launcher.
 //!
 //! The library exposes `run()` which boots Tauri, sets up tracing with a log
 //! buffer, and registers the command + event surface used by the React UI.
@@ -69,6 +69,7 @@ pub fn run() {
             commands::detect_tools,
             commands::install_warp,
             commands::install_cloudflared,
+            commands::restart_warp,
             commands::warp_override_support,
             commands::launch_warp_via_proxy,
             commands::endpoint_url,

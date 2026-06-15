@@ -1,10 +1,11 @@
-// Typed wrappers around Tauri command + event surface.
+﻿// Typed wrappers around Tauri command + event surface.
 // Keep names and shapes in sync with crates/warp_gateway_launcher/src/commands.rs.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   Adapter,
+  DeleteProviderResult,
   EndpointInfo,
   GatewayOptions,
   GatewayStatus,
@@ -25,7 +26,7 @@ export const api = {
   listProviders: () => invoke<StoredProvider[]>("list_providers"),
   saveProvider: (provider: ProviderInput) =>
     invoke<StoredProvider[]>("save_provider", { provider }),
-  deleteProvider: (name: string) => invoke<StoredProvider[]>("delete_provider", { name }),
+  deleteProvider: (name: string) => invoke<DeleteProviderResult>("delete_provider", { name }),
 
   // Gateway
   gatewayStatus: () => invoke<GatewayStatus>("gateway_status"),

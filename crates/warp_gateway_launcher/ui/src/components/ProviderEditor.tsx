@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Loader2, Save, Trash2, Wand2 } from "lucide-react";
 import { api, ADAPTERS, WIRE_APIS } from "@/lib/tauri";
 import { Adapter, ProbeResult, ProviderInput, StoredProvider, WireApi } from "@/lib/types";
@@ -43,7 +43,7 @@ interface Props {
   provider: StoredProvider | null;
   isNew: boolean;
   onSaved: (providers: StoredProvider[], savedName: string) => void;
-  onDeleted: (providers: StoredProvider[]) => void;
+  onDeleted: (providers: StoredProvider[], message?: string) => void;
   onFormChange: (form: ProviderInput) => void;
 }
 
@@ -93,8 +93,21 @@ export function ProviderEditor({ provider, isNew, onSaved, onDeleted, onFormChan
 
   const remove = async () => {
     if (!provider) return;
-    const providers = await api.deleteProvider(provider.name);
-    onDeleted(providers);
+    try {
+      const result = await api.deleteProvider(provider.name);
+      apiKeys.current.delete(provider.name);
+      const notes: string[] = [];
+      if (result.gateway_stopped) notes.push("gateway stopped");
+      if (result.tunnel_stopped) notes.push("tunnel stopped");
+      if (result.warp_endpoint_removed) notes.push("removed from Warp");
+      const summary =
+        notes.length > 0 ? `Deleted "${provider.name}" (${notes.join(", ")}).` : `Deleted "${provider.name}".`;
+      const message = [summary, ...result.warnings].join(" ");
+      onDeleted(result.providers, message);
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   const runProbe = async () => {

@@ -1,4 +1,4 @@
-//! Warp setup helpers: detect a Warp install, build a custom-endpoint config to
+﻿//! Warp setup helpers: detect a Warp install, build a custom-endpoint config to
 //! paste into Warp, spawn Warp pointed at the local gateway, and manage an
 //! optional cloudflared tunnel.
 //!
@@ -329,6 +329,55 @@ pub fn upsert_warp_gateway_endpoint(
     Err("automatic Warp endpoint configuration is currently supported on Windows only".to_string())
 }
 
+/// Remove the launcher's managed custom endpoint from Warp's Windows DPAPI
+/// storage, matched by the `@gateway <name>` display name. Unrelated provider
+/// keys and custom endpoints are preserved.
+///
+/// Best-effort: if Warp's storage file does not exist there is nothing to do,
+/// so this returns `Ok(())`. Returns `Ok(true)` when an entry was removed and
+/// `Ok(false)` when no matching entry was present.
+#[cfg(windows)]
+pub fn remove_warp_gateway_endpoint(warp: &Path, name: &str) -> Result<bool, String> {
+    let storage_file = warp_storage_location(warp)?;
+    if !storage_file.is_file() {
+        return Ok(false);
+    }
+    let encrypted = std::fs::read(&storage_file)
+        .map_err(|err| format!("failed to read Warp API keys: {err}"))?;
+    let json = decrypt_warp_storage(encrypted)?;
+    let mut keys: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|err| format!("failed to parse Warp API keys: {err}"))?;
+
+    let name = managed_endpoint_name(name);
+    let Some(root) = keys.as_object_mut() else {
+        return Ok(false);
+    };
+    let Some(endpoints) = root
+        .get_mut("custom_endpoints")
+        .and_then(|value| value.as_array_mut())
+    else {
+        return Ok(false);
+    };
+    let before = endpoints.len();
+    endpoints
+        .retain(|existing| existing.get("name").and_then(|value| value.as_str()) != Some(&name));
+    if endpoints.len() == before {
+        return Ok(false);
+    }
+
+    let json = serde_json::to_string(&keys)
+        .map_err(|err| format!("failed to serialize Warp API keys: {err}"))?;
+    let encrypted = encrypt_warp_storage(&json)?;
+    std::fs::write(&storage_file, encrypted)
+        .map_err(|err| format!("failed to update Warp API keys: {err}"))?;
+    Ok(true)
+}
+
+#[cfg(not(windows))]
+pub fn remove_warp_gateway_endpoint(_warp: &Path, _name: &str) -> Result<bool, String> {
+    Ok(false)
+}
+
 /// Spawn Warp with `WARP_SERVER_ROOT_URL` pointed at the proxy (only relevant
 /// for the transparent-proxy mode, not MPG). Read-only env injection; no source
 /// changes.
@@ -587,8 +636,16 @@ mod tests {
         assert!(!warp_binary_candidates().is_empty());
     }
 
+    #[cfg(not(windows))]
     #[test]
-    fn detect_override_support_marks_dev_and_release_paths() {
+    fn remove_warp_gateway_endpoint_is_noop_on_non_windows() {
+        assert_eq!(
+            remove_warp_gateway_endpoint(Path::new("/usr/bin/warp-terminal"), "NROUTER"),
+            Ok(false)
+        );
+    }
+
+    #[test]    fn detect_override_support_marks_dev_and_release_paths() {
         assert_eq!(
             detect_server_url_override_support(Path::new(
                 "C:/Users/test/AppData/Local/Programs/WarpDev/warp.exe"

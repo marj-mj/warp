@@ -1,4 +1,4 @@
-// Mirrors the Rust serde types in crates/warp_gateway_launcher/src/*.
+﻿// Mirrors the Rust serde types in crates/warp_gateway_launcher/src/*.
 
 export type WireApi = "chat" | "responses";
 
@@ -16,6 +16,14 @@ export interface StoredProvider {
   wire_api: WireApi;
   adapter: Adapter;
   env_key: string | null;
+}
+export interface DeleteProviderResult {
+  providers: StoredProvider[];
+  gateway_stopped: boolean;
+  tunnel_stopped: boolean;
+  warp_endpoint_removed: boolean;
+  warp_running: boolean;
+  warnings: string[];
 }
 
 export interface ProviderInput {

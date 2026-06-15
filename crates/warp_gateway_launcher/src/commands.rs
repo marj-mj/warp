@@ -1,4 +1,4 @@
-//! Tauri command surface â€” the bridge between the React UI and the Rust
+﻿//! Tauri command surface Ã¢â‚¬â€ the bridge between the React UI and the Rust
 //! gateway/proxy controllers, provider store, and launch flow.
 
 use std::sync::Arc;
@@ -211,18 +211,94 @@ pub fn save_provider(provider: ProviderInput) -> CmdResult<Vec<StoredProvider>> 
     Ok(store.providers)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DeleteProviderResult {
+    pub providers: Vec<StoredProvider>,
+    pub gateway_stopped: bool,
+    pub tunnel_stopped: bool,
+    pub warp_endpoint_removed: bool,
+    pub warp_running: bool,
+    pub warnings: Vec<String>,
+}
+
 #[tauri::command]
-pub fn delete_provider(name: String) -> CmdResult<Vec<StoredProvider>> {
+pub async fn delete_provider(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> CmdResult<DeleteProviderResult> {
     let mut store = ProviderStore::load().unwrap_or_default();
+    let mut removed_provider = None;
     if let Some(index) = store
         .providers
         .iter()
         .position(|p| p.name.eq_ignore_ascii_case(&name))
     {
+        removed_provider = Some(store.providers[index].clone());
         store.remove(index);
         store.save()?;
     }
-    Ok(store.providers)
+
+    let mut warnings = Vec::new();
+    let mut gateway_stopped = false;
+    let mut tunnel_stopped = false;
+    let mut warp_endpoint_removed = false;
+    let mut warp_running = false;
+
+    if let Some(provider) = removed_provider {
+        {
+            let mut launch = state.launch.lock().await;
+            if launch.tunnel.is_some() || launch.public_url.is_some() {
+                launch.tunnel = None;
+                launch.public_url = None;
+                tunnel_stopped = true;
+            }
+            launch.started_tunnel = false;
+            launch.started_gateway = false;
+            launch.cancel_requested = false;
+            launch.phase = LaunchPhase::Idle;
+            emit_phase(&app, &launch.phase);
+        }
+
+        let gateway = state.gateway.lock().await;
+        if gateway.is_running() {
+            gateway.stop(&app).await;
+            gateway_stopped = true;
+        }
+        drop(gateway);
+
+        let warp = { state.tools.lock().await.warp.clone() };
+        if let Some(warp) = warp {
+            let warp = std::path::PathBuf::from(warp);
+            match crate::warp_setup::is_warp_running(&warp) {
+                Ok(running) => {
+                    warp_running = running;
+                    if running {
+                        warnings.push(
+                            "Warp is running. Restart Warp for the custom provider removal to apply."
+                                .to_string(),
+                        );
+                    }
+                }
+                Err(err) => warnings.push(err),
+            }
+            match crate::warp_setup::remove_warp_gateway_endpoint(&warp, &provider.name) {
+                Ok(removed) => warp_endpoint_removed = removed,
+                Err(err) => warnings.push(err),
+            }
+        } else {
+            warnings.push("Warp not found; custom provider cleanup was skipped.".to_string());
+        }
+    }
+
+    Ok(DeleteProviderResult {
+        providers: store.providers,
+        gateway_stopped,
+        tunnel_stopped,
+        warp_endpoint_removed,
+        warp_running,
+        warnings,
+    })
 }
 
 // ---------------------------------------------------------------------------

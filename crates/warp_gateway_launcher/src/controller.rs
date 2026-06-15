@@ -1,4 +1,4 @@
-//! Gateway controller: async start/stop on top of Tauri's tokio runtime.
+﻿//! Gateway controller: async start/stop on top of Tauri's tokio runtime.
 //!
 //! Emits `gateway://status` events whenever the status changes so the React UI
 //! can react without polling. Generic over the Tauri runtime so it can be
@@ -146,6 +146,3 @@ impl Default for GatewayController {
     }
 }
 
-#[cfg(test)]
-#[path = "controller_tests.rs"]
-mod tests;

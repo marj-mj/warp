@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { ScrollText, Settings2 } from "lucide-react";
 import { api } from "@/lib/tauri";
 import { GatewayOptions, ProviderInput, StoredProvider } from "@/lib/types";
@@ -163,8 +163,8 @@ export default function App() {
                       setIsNew(false);
                       setSelectedName(savedName);
                     }}
-                    onDeleted={async (providers) => {
-                      patch({ providers });
+                    onDeleted={async (providers, message) => {
+                      patch({ providers, message: message ?? "" });
                       setIsNew(false);
                       setSelectedName(providers[0]?.name ?? null);
                     }}

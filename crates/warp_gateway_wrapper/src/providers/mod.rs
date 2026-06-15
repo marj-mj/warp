@@ -81,7 +81,10 @@ impl ChatMessage {
     }
 
     /// Build an assistant message that requests tool calls.
-    pub fn assistant_with_tool_calls(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+    pub fn assistant_with_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<ToolCall>,
+    ) -> Self {
         Self {
             role: Role::Assistant,
             content: content.into(),
@@ -277,7 +280,10 @@ mod tests {
 
     #[test]
     fn family_inference() {
-        assert_eq!(ProviderFamily::from_model(Some("gpt-4.1")), ProviderFamily::OpenAi);
+        assert_eq!(
+            ProviderFamily::from_model(Some("gpt-4.1")),
+            ProviderFamily::OpenAi
+        );
         assert_eq!(
             ProviderFamily::from_model(Some("claude-3-5-sonnet")),
             ProviderFamily::Anthropic
@@ -286,7 +292,10 @@ mod tests {
             ProviderFamily::from_model(Some("gemini-1.5-pro")),
             ProviderFamily::Google
         );
-        assert_eq!(ProviderFamily::from_model(Some("llama-3")), ProviderFamily::Custom);
+        assert_eq!(
+            ProviderFamily::from_model(Some("llama-3")),
+            ProviderFamily::Custom
+        );
         assert_eq!(ProviderFamily::from_model(None), ProviderFamily::OpenAi);
     }
 
@@ -336,5 +345,3 @@ mod tests {
         assert_eq!(provider.name(), "openai");
     }
 }
-
-

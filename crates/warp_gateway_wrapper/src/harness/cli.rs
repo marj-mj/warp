@@ -106,7 +106,11 @@ impl Harness for CliHarness {
 
         if cancellation_token.is_cancelled() {
             engine
-                .fail_execution(&task_id, "cancelled", "Task cancelled before execution".to_string())
+                .fail_execution(
+                    &task_id,
+                    "cancelled",
+                    "Task cancelled before execution".to_string(),
+                )
                 .await;
             engine.finish_stream(&task_id).await;
             return;
@@ -132,7 +136,9 @@ impl Harness for CliHarness {
                         },
                     )
                     .await;
-                engine.fail_execution(&task_id, "harness_launch_failed", message).await;
+                engine
+                    .fail_execution(&task_id, "harness_launch_failed", message)
+                    .await;
                 engine.finish_stream(&task_id).await;
                 return;
             }
@@ -237,7 +243,9 @@ impl Harness for CliHarness {
                         },
                     )
                     .await;
-                engine.fail_execution(&task_id, "harness_failed", message).await;
+                engine
+                    .fail_execution(&task_id, "harness_failed", message)
+                    .await;
             }
             Err(err) => {
                 let message = format!("failed to wait for '{harness_name}' CLI: {err}");
@@ -251,7 +259,9 @@ impl Harness for CliHarness {
                         },
                     )
                     .await;
-                engine.fail_execution(&task_id, "harness_failed", message).await;
+                engine
+                    .fail_execution(&task_id, "harness_failed", message)
+                    .await;
             }
         }
 

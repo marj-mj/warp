@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -174,7 +174,11 @@ mod tests {
     fn test_event_names() {
         assert_eq!(SSEEvent::Ping.event_name(), "ping");
         assert_eq!(
-            SSEEvent::Complete { task_id: "t".into(), result: None }.event_name(),
+            SSEEvent::Complete {
+                task_id: "t".into(),
+                result: None
+            }
+            .event_name(),
             "complete"
         );
     }

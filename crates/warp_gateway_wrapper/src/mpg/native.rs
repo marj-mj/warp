@@ -1,4 +1,4 @@
-﻿//! Native provider adapters: Anthropic Messages and Google Gemini.
+//! Native provider adapters: Anthropic Messages and Google Gemini.
 //!
 //! These convert an incoming OpenAI Chat Completions request into the
 //! provider's native wire format, call upstream, and convert the response back
@@ -64,15 +64,27 @@ fn chat_completion(text: &str, model: &str) -> Value {
 
 /// Convert a Chat Completions body into an Anthropic Messages request.
 pub fn chat_to_anthropic(chat: &Value) -> Value {
-    let model = chat.get("model").and_then(Value::as_str).unwrap_or("claude-3-5-sonnet-latest");
-    let max_tokens = chat.get("max_tokens").and_then(Value::as_u64).unwrap_or(DEFAULT_MAX_TOKENS);
+    let model = chat
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("claude-3-5-sonnet-latest");
+    let max_tokens = chat
+        .get("max_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_MAX_TOKENS);
 
     let mut system = String::new();
     let mut messages = Vec::new();
     if let Some(items) = chat.get("messages").and_then(Value::as_array) {
         for message in items {
-            let role = message.get("role").and_then(Value::as_str).unwrap_or("user");
-            let text = message.get("content").map(content_to_text).unwrap_or_default();
+            let role = message
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("user");
+            let text = message
+                .get("content")
+                .map(content_to_text)
+                .unwrap_or_default();
             match role {
                 "system" => {
                     if !system.is_empty() {
@@ -123,9 +135,16 @@ pub fn anthropic_to_text(body: &Value) -> String {
 
 /// Forward a Chat request to Anthropic `/messages` and convert the response.
 pub async fn forward_anthropic(state: Arc<MpgState>, chat_body: Value) -> Response {
-    let model = chat_body.get("model").and_then(Value::as_str).unwrap_or("default").to_string();
+    let model = chat_body
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("default")
+        .to_string();
     let body = chat_to_anthropic(&chat_body);
-    let url = format!("{}/messages", state.config.provider.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/messages",
+        state.config.provider.base_url.trim_end_matches('/')
+    );
 
     let mut request = state
         .client
@@ -146,11 +165,19 @@ pub async fn forward_anthropic(state: Arc<MpgState>, chat_body: Value) -> Respon
                 return (code, text).into_response();
             }
             match response.json::<Value>().await {
-                Ok(value) => Json(chat_completion(&anthropic_to_text(&value), &model)).into_response(),
-                Err(err) => (StatusCode::BAD_GATEWAY, format!("invalid JSON: {err}")).into_response(),
+                Ok(value) => {
+                    Json(chat_completion(&anthropic_to_text(&value), &model)).into_response()
+                }
+                Err(err) => {
+                    (StatusCode::BAD_GATEWAY, format!("invalid JSON: {err}")).into_response()
+                }
             }
         }
-        Err(err) => (StatusCode::BAD_GATEWAY, format!("upstream request failed: {err}")).into_response(),
+        Err(err) => (
+            StatusCode::BAD_GATEWAY,
+            format!("upstream request failed: {err}"),
+        )
+            .into_response(),
     }
 }
 
@@ -164,8 +191,14 @@ pub fn chat_to_gemini(chat: &Value) -> Value {
     let mut contents = Vec::new();
     if let Some(items) = chat.get("messages").and_then(Value::as_array) {
         for message in items {
-            let role = message.get("role").and_then(Value::as_str).unwrap_or("user");
-            let text = message.get("content").map(content_to_text).unwrap_or_default();
+            let role = message
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("user");
+            let text = message
+                .get("content")
+                .map(content_to_text)
+                .unwrap_or_default();
             match role {
                 "system" => {
                     if !system.is_empty() {
@@ -196,7 +229,11 @@ pub fn chat_to_gemini(chat: &Value) -> Value {
     if let Some(max) = chat.get("max_tokens").and_then(Value::as_u64) {
         generation_config["maxOutputTokens"] = json!(max);
     }
-    if generation_config.as_object().map(|m| !m.is_empty()).unwrap_or(false) {
+    if generation_config
+        .as_object()
+        .map(|m| !m.is_empty())
+        .unwrap_or(false)
+    {
         out["generationConfig"] = generation_config;
     }
     out
@@ -248,10 +285,16 @@ pub async fn forward_gemini(state: Arc<MpgState>, chat_body: Value) -> Response 
             }
             match response.json::<Value>().await {
                 Ok(value) => Json(chat_completion(&gemini_to_text(&value), &model)).into_response(),
-                Err(err) => (StatusCode::BAD_GATEWAY, format!("invalid JSON: {err}")).into_response(),
+                Err(err) => {
+                    (StatusCode::BAD_GATEWAY, format!("invalid JSON: {err}")).into_response()
+                }
             }
         }
-        Err(err) => (StatusCode::BAD_GATEWAY, format!("upstream request failed: {err}")).into_response(),
+        Err(err) => (
+            StatusCode::BAD_GATEWAY,
+            format!("upstream request failed: {err}"),
+        )
+            .into_response(),
     }
 }
 

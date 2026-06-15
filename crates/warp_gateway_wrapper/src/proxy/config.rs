@@ -1,4 +1,4 @@
-﻿//! Configuration for the transparent Warp proxy.
+//! Configuration for the transparent Warp proxy.
 //!
 //! The proxy sits between a Warp client (configured via `WARP_SERVER_ROOT_URL`
 //! / `WARP_WS_SERVER_URL` to point at the proxy) and the upstream Warp backend.
@@ -114,7 +114,10 @@ mod tests {
     fn channel_presets() {
         assert_eq!(WarpChannel::Production.http_root(), "https://app.warp.dev");
         assert_eq!(WarpChannel::Staging.ws_rtc(), "wss://rtc.staging.warp.dev");
-        assert_eq!(WarpChannel::Dev.ws_sessions(), "wss://sessions.dev.warp.dev");
+        assert_eq!(
+            WarpChannel::Dev.ws_sessions(),
+            "wss://sessions.dev.warp.dev"
+        );
     }
 
     #[test]

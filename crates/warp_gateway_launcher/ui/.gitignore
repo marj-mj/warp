@@ -1,0 +1,10 @@
+﻿# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Vite generated JS from TS config
+vite.config.js
+vite.config.d.ts

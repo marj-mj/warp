@@ -1,4 +1,4 @@
-﻿//! HTTP request forwarding (REST / GraphQL / SSE) for the transparent proxy.
+//! HTTP request forwarding (REST / GraphQL / SSE) for the transparent proxy.
 //!
 //! Forwards an incoming request to the upstream Warp backend byte-for-byte,
 //! overriding the `Host` and `Authorization` headers. The response (including
@@ -48,7 +48,10 @@ const STRIPPED_RESPONSE_HEADERS: &[&str] = &[
 ];
 
 /// Axum fallback handler: forward any request to the upstream backend.
-pub async fn forward_handler(State(state): State<Arc<ProxyState>>, request: Request<Body>) -> Response {
+pub async fn forward_handler(
+    State(state): State<Arc<ProxyState>>,
+    request: Request<Body>,
+) -> Response {
     match forward(state, request).await {
         Ok(response) => response,
         Err(message) => {
@@ -157,9 +160,9 @@ fn build_client_response(upstream: reqwest::Response) -> Result<Response, String
     }
 
     // Stream the body so server-sent events are relayed incrementally.
-    let stream = upstream.bytes_stream().map(|chunk| {
-        chunk.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
-    });
+    let stream = upstream
+        .bytes_stream()
+        .map(|chunk| chunk.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
     let body = Body::from_stream(stream);
 
     let mut response = Response::new(body);

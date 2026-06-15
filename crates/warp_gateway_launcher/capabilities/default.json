@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability set for the launcher window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+    "opener:allow-open-url",
+    "dialog:default"
+  ]
+}

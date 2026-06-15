@@ -49,10 +49,18 @@ pub struct GatewayEngine {
 }
 
 impl GatewayEngine {
-    pub async fn handle_request(&self, request: crate::protocol::GatewayRequest) -> crate::protocol::GatewayResponse {
+    pub async fn handle_request(
+        &self,
+        request: crate::protocol::GatewayRequest,
+    ) -> crate::protocol::GatewayResponse {
         match request {
-            crate::protocol::GatewayRequest::Execute { task_id, tool_name, parameters } => {
-                self.execute_tool_request(task_id, tool_name, parameters).await
+            crate::protocol::GatewayRequest::Execute {
+                task_id,
+                tool_name,
+                parameters,
+            } => {
+                self.execute_tool_request(task_id, tool_name, parameters)
+                    .await
             }
             crate::protocol::GatewayRequest::ListTools => {
                 let registry = self.registry.read().await;
@@ -93,10 +101,14 @@ impl GatewayEngine {
         tool_name: String,
         parameters: serde_json::Value,
     ) -> crate::protocol::GatewayResponse {
-        let (cancellation_token, _progress_rx) = self.task_manager.register_task(task_id.clone()).await;
+        let (cancellation_token, _progress_rx) =
+            self.task_manager.register_task(task_id.clone()).await;
         let context = ToolContext::new(task_id.clone(), cancellation_token);
 
-        match self.execute_named_tool(context, &tool_name, parameters).await {
+        match self
+            .execute_named_tool(context, &tool_name, parameters)
+            .await
+        {
             Ok(result) => {
                 self.task_manager.unregister_task(&task_id).await;
                 crate::protocol::GatewayResponse::ToolResult {
@@ -114,7 +126,7 @@ impl GatewayEngine {
                     crate::protocol::GatewayError::Timeout => "timeout",
                     crate::protocol::GatewayError::Cancelled(_) => "cancelled",
                     crate::protocol::GatewayError::PermissionDenied(_) => "permission_denied",
-        crate::protocol::GatewayError::IOError(_) => "io_error",
+                    crate::protocol::GatewayError::IOError(_) => "io_error",
                     crate::protocol::GatewayError::SerializationError(_) => "serialization_error",
                 };
 
@@ -181,19 +193,21 @@ impl GatewayEngine {
         let task_id = TaskId::new();
         let run_id = uuid::Uuid::new_v4().to_string();
 
-        let (cancellation_token, progress_rx) = self.task_manager.register_task(task_id.clone()).await;
+        let (cancellation_token, progress_rx) =
+            self.task_manager.register_task(task_id.clone()).await;
         self.stream_manager.create_channel(task_id.clone()).await;
 
         self.set_execution_record(ExecutionRecord::new(
             task_id.clone(),
             run_id.clone(),
             ExecutionState::Running,
-        )).await;
+        ))
+        .await;
 
         // Capture log fields before equest/identity are moved into the session.
         let identity_uid = identity.uid.clone();
-        let harness_label = crate::harness::HarnessType::from_str_or_default(request.harness())
-            .as_str();
+        let harness_label =
+            crate::harness::HarnessType::from_str_or_default(request.harness()).as_str();
         let session = AgentSession::new(task_id.clone(), run_id.clone(), request, identity);
         let engine = self.clone();
         let progress_engine = engine.clone();
@@ -221,17 +235,21 @@ impl GatewayEngine {
         mut progress_rx: tokio::sync::mpsc::UnboundedReceiver<ProgressUpdate>,
     ) {
         while let Some(update) = progress_rx.recv().await {
-            let _ = self.stream_manager.send_event(
-                &update.task_id,
-                SSEEvent::Progress {
-                    task_id: update.task_id.to_string(),
-                    progress: update.progress,
-                    message: update.message,
-                    metadata: update.metadata,
-                },
-            ).await;
+            let _ = self
+                .stream_manager
+                .send_event(
+                    &update.task_id,
+                    SSEEvent::Progress {
+                        task_id: update.task_id.to_string(),
+                        progress: update.progress,
+                        message: update.message,
+                        metadata: update.metadata,
+                    },
+                )
+                .await;
 
-            self.update_progress(&update.task_id, Some(update.progress)).await;
+            self.update_progress(&update.task_id, Some(update.progress))
+                .await;
         }
     }
 
@@ -260,7 +278,10 @@ impl GatewayEngine {
     }
 
     pub async fn set_execution_record(&self, record: ExecutionRecord) {
-        self.executions.write().await.insert(record.task_id.clone(), record);
+        self.executions
+            .write()
+            .await
+            .insert(record.task_id.clone(), record);
     }
 
     pub async fn get_execution_record(&self, task_id: &TaskId) -> Option<ExecutionRecord> {
@@ -314,11 +335,7 @@ impl GatewayEngine {
         }
     }
 
-    pub async fn complete_execution(
-        &self,
-        task_id: &TaskId,
-        result: serde_json::Value,
-    ) {
+    pub async fn complete_execution(&self, task_id: &TaskId, result: serde_json::Value) {
         if let Some(record) = self.executions.write().await.get_mut(task_id) {
             record.state = ExecutionState::Completed;
             record.progress = Some(1.0);
@@ -329,12 +346,7 @@ impl GatewayEngine {
         self.task_manager.unregister_task(task_id).await;
     }
 
-    pub async fn fail_execution(
-        &self,
-        task_id: &TaskId,
-        code: &str,
-        message: String,
-    ) {
+    pub async fn fail_execution(&self, task_id: &TaskId, code: &str, message: String) {
         if let Some(record) = self.executions.write().await.get_mut(task_id) {
             record.state = if code == "cancelled" {
                 ExecutionState::Cancelled
@@ -345,14 +357,17 @@ impl GatewayEngine {
             record.completed_at = Some(crate::gateway::session::now_epoch_secs());
         }
 
-        let _ = self.stream_manager.send_event(
-            task_id,
-            SSEEvent::Error {
-                task_id: task_id.to_string(),
-                code: code.to_string(),
-                message,
-            },
-        ).await;
+        let _ = self
+            .stream_manager
+            .send_event(
+                task_id,
+                SSEEvent::Error {
+                    task_id: task_id.to_string(),
+                    code: code.to_string(),
+                    message,
+                },
+            )
+            .await;
 
         self.task_manager.unregister_task(task_id).await;
     }
@@ -361,6 +376,3 @@ impl GatewayEngine {
         self.stream_manager.remove_channel(task_id).await;
     }
 }
-
-
-

@@ -58,7 +58,11 @@ pub async fn forward_responses(state: Arc<MpgState>, chat_body: Value) -> Respon
         Ok(response) => response,
         Err(err) => {
             tracing::warn!(error = %err, url = %url, "mpg responses upstream request failed");
-            return (StatusCode::BAD_GATEWAY, format!("upstream request failed: {err}")).into_response();
+            return (
+                StatusCode::BAD_GATEWAY,
+                format!("upstream request failed: {err}"),
+            )
+                .into_response();
         }
     };
 
@@ -78,9 +82,11 @@ pub async fn forward_responses(state: Arc<MpgState>, chat_body: Value) -> Respon
                 let text = extract_text_from_responses_json(&body);
                 Json(responses_json_to_chat(&text, &model)).into_response()
             }
-            Err(err) => {
-                (StatusCode::BAD_GATEWAY, format!("failed to read upstream JSON: {err}")).into_response()
-            }
+            Err(err) => (
+                StatusCode::BAD_GATEWAY,
+                format!("failed to read upstream JSON: {err}"),
+            )
+                .into_response(),
         }
     }
 }
@@ -404,7 +410,10 @@ mod tests {
     fn delta_event_primary_path() {
         let mut stats = SseConvertStats::default();
         let event = json!({ "type": "response.output_text.delta", "delta": "Hel" });
-        assert_eq!(responses_event_to_delta(&event, &mut stats).as_deref(), Some("Hel"));
+        assert_eq!(
+            responses_event_to_delta(&event, &mut stats).as_deref(),
+            Some("Hel")
+        );
         assert_eq!(stats.content_delta_events, 1);
     }
 

@@ -1,12 +1,12 @@
-﻿use reqwest::Client;
-use serde_json::json;
 use futures_util::StreamExt;
+use reqwest::Client;
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let base_url = "http://127.0.0.1:8080";
-    
+
     // 1. Spawn an agent
     println!("Spawning agent...");
     let spawn_request = json!({
@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "temperature": 0.7
         }
     });
-    
+
     let spawn_response = client
         .post(&format!("{}/agent/run", base_url))
         .json(&spawn_request)
@@ -24,25 +24,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .json::<serde_json::Value>()
         .await?;
-    
-    println!("Spawn response: {}", serde_json::to_string_pretty(&spawn_response)?);
-    
+
+    println!(
+        "Spawn response: {}",
+        serde_json::to_string_pretty(&spawn_response)?
+    );
+
     let task_id = spawn_response["task_id"].as_str().unwrap();
     let run_id = spawn_response["run_id"].as_str().unwrap();
-    
+
     println!("\nTask ID: {}", task_id);
     println!("Run ID: {}", run_id);
-    
+
     // 2. Subscribe to event stream
     println!("\nSubscribing to event stream...");
     let stream_url = format!("{}/agent/stream/{}", base_url, task_id);
-    
-    let mut event_source = reqwest::get(&stream_url)
-        .await?
-        .bytes_stream();
-    
+
+    let mut event_source = reqwest::get(&stream_url).await?.bytes_stream();
+
     println!("Listening for events (Ctrl+C to stop)...\n");
-    
+
     while let Some(chunk) = event_source.next().await {
         match chunk {
             Ok(bytes) => {
@@ -60,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     // 3. Check task status
     println!("\nChecking task status...");
     let status_response = client
@@ -69,8 +70,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .json::<serde_json::Value>()
         .await?;
-    
-    println!("Status: {}", serde_json::to_string_pretty(&status_response)?);
-    
+
+    println!(
+        "Status: {}",
+        serde_json::to_string_pretty(&status_response)?
+    );
+
     Ok(())
 }

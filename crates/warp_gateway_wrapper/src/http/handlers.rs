@@ -16,7 +16,8 @@ use crate::gateway::GatewayEngine;
 use crate::http::auth::{AuthError, Authenticator, Identity};
 use crate::http::sse::SSEEvent;
 use crate::http::types::{
-    CancelTaskRequest, CancelTaskResponse, SpawnAgentRequest, SpawnAgentResponse, TaskStatusResponse,
+    CancelTaskRequest, CancelTaskResponse, SpawnAgentRequest, SpawnAgentResponse,
+    TaskStatusResponse,
 };
 use crate::utils::TaskId;
 
@@ -117,8 +118,7 @@ pub async fn stream_handler(
     Query(query): Query<StreamQuery>,
     headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
-    let task_id = TaskId::from_string(task_id_str)
-        .map_err(AppError::BadRequest)?;
+    let task_id = TaskId::from_string(task_id_str).map_err(AppError::BadRequest)?;
 
     // Resolve the last seen event id from the header (preferred) or query param.
     let last_event_id = headers
@@ -170,18 +170,22 @@ pub async fn cancel_task_handler(
     State(state): State<AppState>,
     Json(request): Json<CancelTaskRequest>,
 ) -> Result<Json<CancelTaskResponse>, AppError> {
-    let task_id = TaskId::from_string(request.task_id)
-        .map_err(AppError::BadRequest)?;
+    let task_id = TaskId::from_string(request.task_id).map_err(AppError::BadRequest)?;
 
     let task_manager = state.gateway.task_manager();
     let success = task_manager.cancel_task(&task_id).await;
 
     if success {
         let stream_manager = state.gateway.stream_manager();
-        let _ = stream_manager.send_event(&task_id, SSEEvent::Cancelled {
-            task_id: task_id.to_string(),
-            reason: None,
-        }).await;
+        let _ = stream_manager
+            .send_event(
+                &task_id,
+                SSEEvent::Cancelled {
+                    task_id: task_id.to_string(),
+                    reason: None,
+                },
+            )
+            .await;
     }
 
     Ok(Json(CancelTaskResponse {
@@ -198,10 +202,12 @@ pub async fn get_task_status_handler(
     State(state): State<AppState>,
     Path(task_id_str): Path<String>,
 ) -> Result<Json<TaskStatusResponse>, AppError> {
-    let task_id = TaskId::from_string(task_id_str)
-        .map_err(AppError::BadRequest)?;
+    let task_id = TaskId::from_string(task_id_str).map_err(AppError::BadRequest)?;
 
-    let record = state.gateway.get_execution_record(&task_id).await
+    let record = state
+        .gateway
+        .get_execution_record(&task_id)
+        .await
         .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
 
     Ok(Json(TaskStatusResponse {

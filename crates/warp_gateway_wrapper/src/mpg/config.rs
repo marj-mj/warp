@@ -147,11 +147,17 @@ impl GatewayConfig {
         if let Ok(value) = std::env::var("WARP_MANAGED_PROVIDER_GATEWAY_AUTH_TOKEN") {
             self.auth_token = value;
         }
-        self.disable_tools =
-            env_bool("WARP_MANAGED_PROVIDER_GATEWAY_DISABLE_TOOLS", self.disable_tools);
-        self.disable_mcp =
-            env_bool("WARP_MANAGED_PROVIDER_GATEWAY_DISABLE_MCP", self.disable_mcp);
-        if let Ok(value) = std::env::var("WARP_MANAGED_PROVIDER_GATEWAY_DUPLICATE_REQUEST_WINDOW_SECS") {
+        self.disable_tools = env_bool(
+            "WARP_MANAGED_PROVIDER_GATEWAY_DISABLE_TOOLS",
+            self.disable_tools,
+        );
+        self.disable_mcp = env_bool(
+            "WARP_MANAGED_PROVIDER_GATEWAY_DISABLE_MCP",
+            self.disable_mcp,
+        );
+        if let Ok(value) =
+            std::env::var("WARP_MANAGED_PROVIDER_GATEWAY_DUPLICATE_REQUEST_WINDOW_SECS")
+        {
             if let Ok(parsed) = value.parse() {
                 self.duplicate_window_secs = parsed;
             }
@@ -203,8 +209,8 @@ impl ProvidersFile {
     pub fn pick(path: &std::path::Path, name: &str) -> Result<ProviderConfig, String> {
         let raw = std::fs::read_to_string(path)
             .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-        let parsed: ProvidersFile = serde_json::from_str(&raw)
-            .map_err(|err| format!("invalid providers JSON: {err}"))?;
+        let parsed: ProvidersFile =
+            serde_json::from_str(&raw).map_err(|err| format!("invalid providers JSON: {err}"))?;
         let lowered = name.to_ascii_lowercase();
         parsed
             .providers
@@ -269,7 +275,10 @@ mod tests {
 
     #[test]
     fn adapter_groups_correctly() {
-        assert_eq!(Adapter::OpenaiChat.compatibility_group(), "openai_compatible_chat");
+        assert_eq!(
+            Adapter::OpenaiChat.compatibility_group(),
+            "openai_compatible_chat"
+        );
         assert_eq!(
             Adapter::OpenaiResponses.compatibility_group(),
             "openai_compatible_responses"

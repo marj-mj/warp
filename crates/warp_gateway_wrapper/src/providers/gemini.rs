@@ -1,4 +1,4 @@
-﻿//! Google Gemini `generateContent` provider.
+//! Google Gemini `generateContent` provider.
 //!
 //! Talks to `{base_url}/models/{model}:generateContent?key=...`. Tools are sent as
 //! `functionDeclarations`; the model replies with `functionCall` parts and the
@@ -137,11 +137,18 @@ impl GeminiProvider {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
-                let arguments = function_call.get("args").cloned().unwrap_or_else(|| json!({}));
+                let arguments = function_call
+                    .get("args")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
                 // Gemini calls have no id; synthesize a stable one keyed on name.
                 let id = format!("{name}-{call_index}");
                 call_index += 1;
-                tool_calls.push(ToolCall { id, name, arguments });
+                tool_calls.push(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                });
             }
         }
 
@@ -159,7 +166,10 @@ impl LlmProvider for GeminiProvider {
     }
 
     async fn step(&self, request: &CompletionRequest) -> Result<AssistantTurn, GatewayError> {
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = request
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
         let (system_instruction, contents) = Self::encode(&request.messages);
 
         let mut payload = json!({ "contents": contents });
@@ -177,7 +187,11 @@ impl LlmProvider for GeminiProvider {
         if let Some(max_tokens) = request.max_tokens {
             generation_config["maxOutputTokens"] = json!(max_tokens);
         }
-        if generation_config.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+        if generation_config
+            .as_object()
+            .map(|o| !o.is_empty())
+            .unwrap_or(false)
+        {
             payload["generationConfig"] = generation_config;
         }
 
@@ -191,13 +205,14 @@ impl LlmProvider for GeminiProvider {
             .json(&payload)
             .send()
             .await
-            .map_err(|err| GatewayError::ExecutionFailed(format!("request to Gemini failed: {err}")))?;
+            .map_err(|err| {
+                GatewayError::ExecutionFailed(format!("request to Gemini failed: {err}"))
+            })?;
 
         let status = response.status();
-        let body_text = response
-            .text()
-            .await
-            .map_err(|err| GatewayError::ExecutionFailed(format!("failed to read response body: {err}")))?;
+        let body_text = response.text().await.map_err(|err| {
+            GatewayError::ExecutionFailed(format!("failed to read response body: {err}"))
+        })?;
 
         if !status.is_success() {
             return Err(GatewayError::ExecutionFailed(format!(
@@ -225,10 +240,7 @@ mod tests {
 
     #[test]
     fn encodes_system_instruction_and_contents() {
-        let messages = vec![
-            ChatMessage::system("be concise"),
-            ChatMessage::user("hi"),
-        ];
+        let messages = vec![ChatMessage::system("be concise"), ChatMessage::user("hi")];
         let (system, contents) = GeminiProvider::encode(&messages);
         assert_eq!(system.unwrap()["parts"][0]["text"], "be concise");
         assert_eq!(contents.len(), 1);

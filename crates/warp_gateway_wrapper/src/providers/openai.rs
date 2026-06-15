@@ -1,4 +1,4 @@
-﻿//! OpenAI-compatible chat completions provider.
+//! OpenAI-compatible chat completions provider.
 //!
 //! Works against the OpenAI API or any OpenAI-compatible endpoint (including a
 //! managed gateway) by POSTing to `{base_url}/chat/completions`. Tool calling
@@ -96,7 +96,9 @@ impl OpenAiProvider {
             .and_then(|choices| choices.get(0))
             .and_then(|choice| choice.get("message"))
             .ok_or_else(|| {
-                GatewayError::ExecutionFailed("OpenAI response missing choices[0].message".to_string())
+                GatewayError::ExecutionFailed(
+                    "OpenAI response missing choices[0].message".to_string(),
+                )
             })?;
 
         let content = message
@@ -119,8 +121,8 @@ impl OpenAiProvider {
                     .and_then(|f| f.get("arguments"))
                     .and_then(Value::as_str)
                     .unwrap_or("{}");
-                let arguments = serde_json::from_str::<Value>(raw_args)
-                    .unwrap_or_else(|_| json!({}));
+                let arguments =
+                    serde_json::from_str::<Value>(raw_args).unwrap_or_else(|_| json!({}));
 
                 let id = call
                     .get("id")
@@ -128,11 +130,18 @@ impl OpenAiProvider {
                     .map(str::to_string)
                     .unwrap_or_else(|| format!("call-{index}"));
 
-                tool_calls.push(ToolCall { id, name, arguments });
+                tool_calls.push(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                });
             }
         }
 
-        Ok(AssistantTurn { content, tool_calls })
+        Ok(AssistantTurn {
+            content,
+            tool_calls,
+        })
     }
 }
 
@@ -143,7 +152,10 @@ impl LlmProvider for OpenAiProvider {
     }
 
     async fn step(&self, request: &CompletionRequest) -> Result<AssistantTurn, GatewayError> {
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = request
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
 
         let mut payload = json!({
             "model": model,
@@ -169,13 +181,14 @@ impl LlmProvider for OpenAiProvider {
             .json(&payload)
             .send()
             .await
-            .map_err(|err| GatewayError::ExecutionFailed(format!("request to {url} failed: {err}")))?;
+            .map_err(|err| {
+                GatewayError::ExecutionFailed(format!("request to {url} failed: {err}"))
+            })?;
 
         let status = response.status();
-        let body_text = response
-            .text()
-            .await
-            .map_err(|err| GatewayError::ExecutionFailed(format!("failed to read response body: {err}")))?;
+        let body_text = response.text().await.map_err(|err| {
+            GatewayError::ExecutionFailed(format!("failed to read response body: {err}"))
+        })?;
 
         if !status.is_success() {
             return Err(GatewayError::ExecutionFailed(format!(

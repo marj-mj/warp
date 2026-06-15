@@ -118,7 +118,11 @@ impl AuthConfig {
     }
 
     /// Build a single-token config granting the given permissions.
-    pub fn single_token(token: impl Into<String>, uid: impl Into<String>, privileged: bool) -> Self {
+    pub fn single_token(
+        token: impl Into<String>,
+        uid: impl Into<String>,
+        privileged: bool,
+    ) -> Self {
         Self {
             enabled: true,
             tokens: vec![TokenEntry {
@@ -199,7 +203,9 @@ fn extract_bearer(authorization: Option<&str>) -> Option<&str> {
     let value = authorization?;
     let trimmed = value.trim();
     // Case-insensitive scheme match.
-    let rest = trimmed.strip_prefix("Bearer ").or_else(|| trimmed.strip_prefix("bearer "))?;
+    let rest = trimmed
+        .strip_prefix("Bearer ")
+        .or_else(|| trimmed.strip_prefix("bearer "))?;
     let token = rest.trim();
     if token.is_empty() {
         None
@@ -223,7 +229,10 @@ mod tests {
     #[test]
     fn missing_credentials_rejected_when_enabled() {
         let auth = Authenticator::new(AuthConfig::single_token("secret", "u1", true));
-        assert_eq!(auth.authenticate(None, None).unwrap_err(), AuthError::MissingCredentials);
+        assert_eq!(
+            auth.authenticate(None, None).unwrap_err(),
+            AuthError::MissingCredentials
+        );
     }
 
     #[test]

@@ -1,37 +1,47 @@
-﻿//! Async probe runner for the launcher.
-//!
-//! Runs `mpg::probe::probe_provider` on the controller's tokio runtime and
-//! delivers the result back to the UI thread via a oneshot channel, so the UI
-//! never blocks while a probe is in flight.
+//! Probe runner: async wrapper over `mpg::probe::probe_provider`, returning a
+//! serializable summary for the frontend.
 
-use tokio::sync::oneshot;
+use serde::Serialize;
 use warp_gateway_wrapper::mpg::probe::{probe_provider, CapabilityMatrix};
 
-/// A probe in progress: holds the receiver the UI polls each frame.
-pub struct PendingProbe {
-    rx: oneshot::Receiver<CapabilityMatrix>,
+#[derive(Debug, Clone, Serialize)]
+pub struct ProbeResult {
+    pub adapter: String,
+    pub wire_api: String,
+    pub compatibility_group: String,
+    pub confidence: String,
+    pub disable_tools: bool,
+    pub disable_mcp: bool,
+    pub chat_non_stream: String,
+    pub chat_streaming: String,
+    pub chat_tools: String,
+    pub responses_non_stream: String,
+    pub responses_streaming: String,
+    pub responses_tools: String,
 }
 
-impl PendingProbe {
-    /// Spawn a probe on `handle`. `api_key` may be empty.
-    pub fn spawn(
-        handle: &tokio::runtime::Handle,
-        base_url: String,
-        api_key: Option<String>,
-    ) -> Self {
-        let (tx, rx) = oneshot::channel();
-        handle.spawn(async move {
-            let matrix = probe_provider(&base_url, api_key.as_deref()).await;
-            let _ = tx.send(matrix);
-        });
-        Self { rx }
-    }
-
-    /// Non-blocking poll: returns the matrix once the probe completes.
-    pub fn poll(&mut self) -> Option<CapabilityMatrix> {
-        match self.rx.try_recv() {
-            Ok(matrix) => Some(matrix),
-            Err(_) => None,
+impl ProbeResult {
+    fn from_matrix(matrix: &CapabilityMatrix) -> Self {
+        let rec = matrix.recommend();
+        Self {
+            adapter: rec.adapter.to_string(),
+            wire_api: rec.wire_api.to_string(),
+            compatibility_group: rec.compatibility_group.to_string(),
+            confidence: rec.confidence.to_string(),
+            disable_tools: rec.safe_mode_defaults.disable_tools,
+            disable_mcp: rec.safe_mode_defaults.disable_mcp,
+            chat_non_stream: matrix.chat_non_stream.as_str().to_string(),
+            chat_streaming: matrix.chat_streaming.as_str().to_string(),
+            chat_tools: matrix.chat_tools.as_str().to_string(),
+            responses_non_stream: matrix.responses_non_stream.as_str().to_string(),
+            responses_streaming: matrix.responses_streaming.as_str().to_string(),
+            responses_tools: matrix.responses_tools.as_str().to_string(),
         }
     }
+}
+
+/// Run a capability probe against `base_url`. `api_key` may be empty.
+pub async fn run_probe(base_url: String, api_key: Option<String>) -> ProbeResult {
+    let matrix = probe_provider(&base_url, api_key.as_deref()).await;
+    ProbeResult::from_matrix(&matrix)
 }

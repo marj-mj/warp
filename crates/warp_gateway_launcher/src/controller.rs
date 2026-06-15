@@ -1,17 +1,19 @@
-//! Gateway controller: owns a tokio runtime and runs the Managed Provider
-//! Gateway in-process, with start/stop and observable status.
+//! Gateway controller: async start/stop on top of Tauri's tokio runtime.
 //!
-//! The egui UI thread stays responsive; all async work happens on a dedicated
-//! multi-thread tokio runtime owned by the controller.
+//! Emits `gateway://status` events whenever the status changes so the React UI
+//! can react without polling. Generic over the Tauri runtime so it can be
+//! exercised with `tauri::test::MockRuntime` in tests.
 
 use std::sync::{Arc, Mutex};
 
-use tokio::runtime::Runtime;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use warp_gateway_wrapper::mpg::{GatewayConfig, MpgServer};
 
-/// Observable gateway status, shared with the UI.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GatewayStatus {
     Stopped,
     Running { addr: String },
@@ -23,135 +25,124 @@ impl GatewayStatus {
     pub fn is_running(&self) -> bool {
         matches!(self, Self::Running { .. })
     }
-
-    #[allow(dead_code)]
-    pub fn label(&self) -> String {
-        match self {
-            Self::Stopped => "stopped".to_string(),
-            Self::Running { addr } => format!("running @ {addr}"),
-            Self::Error { message } => format!("error: {message}"),
-        }
-    }
 }
 
-/// Handle to a running gateway instance: the shutdown trigger + join handle.
 struct RunningInstance {
     shutdown: oneshot::Sender<()>,
-    join: tokio::task::JoinHandle<()>,
+    join: JoinHandle<()>,
 }
 
 pub struct GatewayController {
-    runtime: Runtime,
     status: Arc<Mutex<GatewayStatus>>,
-    instance: Option<RunningInstance>,
+    instance: Mutex<Option<RunningInstance>>,
 }
 
 impl GatewayController {
-    pub fn new() -> std::io::Result<Self> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()?;
-        Ok(Self {
-            runtime,
+    pub fn new() -> Self {
+        Self {
             status: Arc::new(Mutex::new(GatewayStatus::Stopped)),
-            instance: None,
-        })
+            instance: Mutex::new(None),
+        }
     }
 
-    /// Handle to the controller's tokio runtime, for spawning auxiliary work
-    /// (e.g. provider probes) without blocking the UI thread.
-    pub fn runtime_handle(&self) -> tokio::runtime::Handle {
-        self.runtime.handle().clone()
-    }
-
-    /// Current status snapshot.
     pub fn status(&self) -> GatewayStatus {
         self.status.lock().unwrap().clone()
     }
 
     pub fn is_running(&self) -> bool {
-        self.instance.is_some()
+        self.instance.lock().unwrap().is_some()
     }
 
-    /// Start the gateway with the given host/port/config. No-op if already running.
-    pub fn start(&mut self, host: &str, port: u16, config: GatewayConfig) {
-        if self.instance.is_some() {
-            return;
+    fn set_status<R: Runtime>(&self, app: &AppHandle<R>, new_status: GatewayStatus) {
+        *self.status.lock().unwrap() = new_status.clone();
+        let _ = app.emit("gateway://status", &new_status);
+    }
+
+    /// Bind the gateway and run it on the Tauri tokio runtime.
+    pub async fn start<R: Runtime>(
+        &self,
+        host: &str,
+        port: u16,
+        config: GatewayConfig,
+        app: &AppHandle<R>,
+    ) -> Result<GatewayStatus, String> {
+        if self.instance.lock().unwrap().is_some() {
+            return Ok(self.status());
         }
 
-        let server = match MpgServer::new(host, port, config) {
-            Ok(server) => server,
-            Err(err) => {
-                *self.status.lock().unwrap() = GatewayStatus::Error {
-                    message: format!("invalid bind address: {err}"),
-                };
-                return;
+        let server = MpgServer::new(host, port, config)
+            .map_err(|err| format!("invalid bind address: {err}"))?;
+        let requested_addr = server.addr();
+        let listener = match tokio::net::TcpListener::bind(requested_addr).await {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+                let fallback_addr = std::net::SocketAddr::new(requested_addr.ip(), 0);
+                let listener =
+                    tokio::net::TcpListener::bind(fallback_addr)
+                        .await
+                        .map_err(|fallback_err| {
+                            format!(
+                                "port {port} is in use and no fallback port could be allocated: \
+                             {fallback_err}"
+                            )
+                        })?;
+                let bound_addr = listener.local_addr().unwrap_or(fallback_addr);
+                tracing::warn!(
+                    requested = %requested_addr,
+                    fallback = %bound_addr,
+                    "gateway port is in use; using an automatically allocated port"
+                );
+                listener
             }
+            Err(err) => return Err(err.to_string()),
         };
+        let bound_addr = listener
+            .local_addr()
+            .map_err(|err| format!("failed to read gateway bind address: {err}"))?;
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-        let (ready_tx, ready_rx) = oneshot::channel::<Result<std::net::SocketAddr, String>>();
-        let status = self.status.clone();
 
-        // Spawn the server task on the controller's runtime. Catch the run
-        // result so a bind/runtime failure surfaces as an Error status.
-        let join = self.runtime.spawn(async move {
+        let status_arc = self.status.clone();
+        let app_for_task = app.clone();
+        let join = tokio::spawn(async move {
             let result = server
-                .run_with_shutdown_signal(
-                    async move {
+                .run_with_listener_and_shutdown(listener, async move {
                     let _ = shutdown_rx.await;
-                    },
-                    Some(ready_tx),
-                )
+                })
                 .await;
-            match result {
-                Ok(()) => {
-                    *status.lock().unwrap() = GatewayStatus::Stopped;
-                }
-                Err(err) => {
-                    *status.lock().unwrap() = GatewayStatus::Error {
-                        message: err.to_string(),
-                    };
-                }
-            }
+            let new_status = match result {
+                Ok(()) => GatewayStatus::Stopped,
+                Err(err) => GatewayStatus::Error {
+                    message: err.to_string(),
+                },
+            };
+            *status_arc.lock().unwrap() = new_status.clone();
+            let _ = app_for_task.emit("gateway://status", &new_status);
         });
 
-        match self.runtime.block_on(async { ready_rx.await }) {
-            Ok(Ok(addr)) => {
-                *self.status.lock().unwrap() = GatewayStatus::Running {
-                    addr: addr.to_string(),
-                };
-                self.instance = Some(RunningInstance {
-                    shutdown: shutdown_tx,
-                    join,
-                });
-            }
-            Ok(Err(message)) => {
-                *self.status.lock().unwrap() = GatewayStatus::Error { message };
-            }
-            Err(_) => {
-                *self.status.lock().unwrap() = GatewayStatus::Error {
-                    message: "gateway exited before reporting readiness".to_string(),
-                };
-            }
-        }
+        let status = GatewayStatus::Running {
+            addr: bound_addr.to_string(),
+        };
+        *self.instance.lock().unwrap() = Some(RunningInstance {
+            shutdown: shutdown_tx,
+            join,
+        });
+        self.set_status(app, status.clone());
+        Ok(status)
     }
 
-    /// Stop the running gateway, waiting for graceful shutdown. No-op if stopped.
-    pub fn stop(&mut self) {
-        if let Some(instance) = self.instance.take() {
-            // Signal shutdown; ignore error if the task already finished.
+    pub async fn stop<R: Runtime>(&self, app: &AppHandle<R>) {
+        let instance = self.instance.lock().unwrap().take();
+        if let Some(instance) = instance {
             let _ = instance.shutdown.send(());
-            // Wait for the server task to wind down so the port is freed.
-            let _ = self.runtime.block_on(instance.join);
-            *self.status.lock().unwrap() = GatewayStatus::Stopped;
+            let _ = instance.join.await;
+            self.set_status(app, GatewayStatus::Stopped);
         }
     }
 }
 
-impl Drop for GatewayController {
-    fn drop(&mut self) {
-        // Ensure the server is stopped before the runtime is dropped.
-        self.stop();
+impl Default for GatewayController {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

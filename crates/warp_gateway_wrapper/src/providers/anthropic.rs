@@ -1,4 +1,4 @@
-﻿//! Anthropic Messages API provider.
+//! Anthropic Messages API provider.
 //!
 //! Talks to `{base_url}/messages` using the Anthropic native schema. Tool calling
 //! uses Anthropic `tool_use` content blocks on output and `tool_result` blocks on
@@ -103,9 +103,14 @@ impl AnthropicProvider {
     }
 
     fn parse_response(body: &Value) -> Result<AssistantTurn, GatewayError> {
-        let content = body.get("content").and_then(Value::as_array).ok_or_else(|| {
-            GatewayError::ExecutionFailed("Anthropic response missing content array".to_string())
-        })?;
+        let content = body
+            .get("content")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                GatewayError::ExecutionFailed(
+                    "Anthropic response missing content array".to_string(),
+                )
+            })?;
 
         let mut text = String::new();
         let mut tool_calls = Vec::new();
@@ -129,7 +134,11 @@ impl AnthropicProvider {
                         .unwrap_or_default()
                         .to_string();
                     let arguments = block.get("input").cloned().unwrap_or_else(|| json!({}));
-                    tool_calls.push(ToolCall { id, name, arguments });
+                    tool_calls.push(ToolCall {
+                        id,
+                        name,
+                        arguments,
+                    });
                 }
                 _ => {}
             }
@@ -149,7 +158,10 @@ impl LlmProvider for AnthropicProvider {
     }
 
     async fn step(&self, request: &CompletionRequest) -> Result<AssistantTurn, GatewayError> {
-        let model = request.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = request
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
         let (system, messages) = Self::encode(&request.messages);
 
         let mut payload = json!({
@@ -177,13 +189,14 @@ impl LlmProvider for AnthropicProvider {
             .json(&payload)
             .send()
             .await
-            .map_err(|err| GatewayError::ExecutionFailed(format!("request to {url} failed: {err}")))?;
+            .map_err(|err| {
+                GatewayError::ExecutionFailed(format!("request to {url} failed: {err}"))
+            })?;
 
         let status = response.status();
-        let body_text = response
-            .text()
-            .await
-            .map_err(|err| GatewayError::ExecutionFailed(format!("failed to read response body: {err}")))?;
+        let body_text = response.text().await.map_err(|err| {
+            GatewayError::ExecutionFailed(format!("failed to read response body: {err}"))
+        })?;
 
         if !status.is_success() {
             return Err(GatewayError::ExecutionFailed(format!(
@@ -205,10 +218,7 @@ mod tests {
 
     #[test]
     fn hoists_system_prompt() {
-        let messages = vec![
-            ChatMessage::system("be helpful"),
-            ChatMessage::user("hi"),
-        ];
+        let messages = vec![ChatMessage::system("be helpful"), ChatMessage::user("hi")];
         let (system, encoded) = AnthropicProvider::encode(&messages);
         assert_eq!(system.as_deref(), Some("be helpful"));
         assert_eq!(encoded.len(), 1);

@@ -1,0 +1,69 @@
+name: Warp Gateway Launcher Bundle
+
+on:
+  pull_request:
+    paths:
+      - "crates/warp_gateway_launcher/**"
+      - ".github/workflows/launcher_bundle.yml"
+      - ".github/actions/prepare_environment/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bundle:
+    name: Build Launcher (${{ matrix.os_label }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_label: Windows
+            runner: windows-latest
+            target_os: windows
+          - os_label: macOS
+            runner: macos-latest
+            target_os: macos
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare environment
+        uses: ./.github/actions/prepare_environment
+        with:
+          target_os: ${{ matrix.target_os }}
+          cache_key: launcher-bundle-${{ matrix.target_os }}
+          is_self_hosted: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 11
+
+      - name: Install frontend dependencies
+        working-directory: crates/warp_gateway_launcher/ui
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Tauri CLI
+        shell: bash
+        run: cargo binstall --no-confirm tauri-cli@2.11.2
+
+      - name: Build launcher bundle
+        working-directory: crates/warp_gateway_launcher
+        shell: bash
+        run: cargo tauri build
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: warp-gateway-launcher-${{ matrix.target_os }}
+          path: |
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.app
+          if-no-files-found: warn
+          retention-days: 7

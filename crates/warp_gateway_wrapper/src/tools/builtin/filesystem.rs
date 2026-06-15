@@ -1,4 +1,4 @@
-﻿//! Filesystem operations tool with path confinement.
+//! Filesystem operations tool with path confinement.
 //!
 //! Supports `read`, `write`, `list`, and `delete` actions. All paths are resolved
 //! against a configured root directory and rejected if they escape it, preventing
@@ -67,9 +67,9 @@ impl FilesystemTool {
     }
 
     async fn read(&self, path: PathBuf) -> ToolResult<Value> {
-        let contents = tokio::fs::read_to_string(&path)
-            .await
-            .map_err(|err| GatewayError::IOError(format!("failed to read {}: {err}", path.display())))?;
+        let contents = tokio::fs::read_to_string(&path).await.map_err(|err| {
+            GatewayError::IOError(format!("failed to read {}: {err}", path.display()))
+        })?;
         Ok(json!({
             "action": "read",
             "path": path.display().to_string(),
@@ -83,9 +83,9 @@ impl FilesystemTool {
                 GatewayError::IOError(format!("failed to create {}: {err}", parent.display()))
             })?;
         }
-        tokio::fs::write(&path, contents)
-            .await
-            .map_err(|err| GatewayError::IOError(format!("failed to write {}: {err}", path.display())))?;
+        tokio::fs::write(&path, contents).await.map_err(|err| {
+            GatewayError::IOError(format!("failed to write {}: {err}", path.display()))
+        })?;
         Ok(json!({
             "action": "write",
             "path": path.display().to_string(),
@@ -94,9 +94,9 @@ impl FilesystemTool {
     }
 
     async fn list(&self, path: PathBuf) -> ToolResult<Value> {
-        let mut entries = tokio::fs::read_dir(&path)
-            .await
-            .map_err(|err| GatewayError::IOError(format!("failed to list {}: {err}", path.display())))?;
+        let mut entries = tokio::fs::read_dir(&path).await.map_err(|err| {
+            GatewayError::IOError(format!("failed to list {}: {err}", path.display()))
+        })?;
 
         let mut items = Vec::new();
         while let Some(entry) = entries
@@ -184,23 +184,30 @@ impl Tool for FilesystemTool {
         let action = parameters
             .get("action")
             .and_then(Value::as_str)
-            .ok_or_else(|| GatewayError::InvalidParameters("Missing 'action' parameter".to_string()))?;
+            .ok_or_else(|| {
+                GatewayError::InvalidParameters("Missing 'action' parameter".to_string())
+            })?;
 
         let requested = parameters
             .get("path")
             .and_then(Value::as_str)
-            .ok_or_else(|| GatewayError::InvalidParameters("Missing 'path' parameter".to_string()))?;
+            .ok_or_else(|| {
+                GatewayError::InvalidParameters("Missing 'path' parameter".to_string())
+            })?;
 
         let resolved = self.resolve(requested)?;
 
         match action {
             "read" => self.read(resolved).await,
             "write" => {
-                let contents = parameters.get("contents").and_then(Value::as_str).ok_or_else(|| {
-                    GatewayError::InvalidParameters(
-                        "'write' action requires a 'contents' parameter".to_string(),
-                    )
-                })?;
+                let contents = parameters
+                    .get("contents")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        GatewayError::InvalidParameters(
+                            "'write' action requires a 'contents' parameter".to_string(),
+                        )
+                    })?;
                 self.write(resolved, contents).await
             }
             "list" => self.list(resolved).await,
@@ -243,7 +250,10 @@ mod tests {
         assert_eq!(write["action"], "write");
 
         let read = tool
-            .execute(context(), json!({ "action": "read", "path": "notes/hello.txt" }))
+            .execute(
+                context(),
+                json!({ "action": "read", "path": "notes/hello.txt" }),
+            )
             .await
             .unwrap();
         assert_eq!(read["contents"], "hi there");
@@ -300,7 +310,10 @@ mod tests {
         let root = temp_root();
         let tool = FilesystemTool::new(&root);
         let err = tool
-            .execute(context(), json!({ "action": "read", "path": "../../etc/passwd" }))
+            .execute(
+                context(),
+                json!({ "action": "read", "path": "../../etc/passwd" }),
+            )
             .await
             .unwrap_err();
         assert!(matches!(err, GatewayError::InvalidParameters(_)));
@@ -311,7 +324,11 @@ mod tests {
     async fn rejects_absolute_path() {
         let root = temp_root();
         let tool = FilesystemTool::new(&root);
-        let abs = if cfg!(windows) { "C:\\Windows\\system.ini" } else { "/etc/passwd" };
+        let abs = if cfg!(windows) {
+            "C:\\Windows\\system.ini"
+        } else {
+            "/etc/passwd"
+        };
         let err = tool
             .execute(context(), json!({ "action": "read", "path": abs }))
             .await

@@ -1,4 +1,4 @@
-﻿//! Deterministic offline provider used when no API credentials are available.
+//! Deterministic offline provider used when no API credentials are available.
 //!
 //! The mock provider keeps the gateway fully functional without network access.
 //! Its behavior is intentionally simple and predictable so it can be relied upon
@@ -83,10 +83,7 @@ impl LlmProvider for MockProvider {
                 "[mock] Completed request '{}'. Tool result: {}",
                 prompt, result
             ),
-            None => format!(
-                "[mock] Completed request '{}' without tool usage.",
-                prompt
-            ),
+            None => format!("[mock] Completed request '{}' without tool usage.", prompt),
         };
 
         Ok(AssistantTurn {

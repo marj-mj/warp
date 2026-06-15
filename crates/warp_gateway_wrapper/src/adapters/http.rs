@@ -40,9 +40,9 @@ impl HttpAdapter {
     pub async fn serve(self, addr: std::net::SocketAddr) -> anyhow::Result<()> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         tracing::info!(%addr, "legacy HTTP adapter listening");
-        
+
         axum::serve(listener, self.router()).await?;
-        
+
         Ok(())
     }
 }
@@ -73,10 +73,7 @@ async fn list_tools(
 }
 
 /// WebSocket handler for bidirectional communication
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(engine): State<Arc<GatewayEngine>>,
-) -> Response {
+async fn ws_handler(ws: WebSocketUpgrade, State(engine): State<Arc<GatewayEngine>>) -> Response {
     ws.on_upgrade(move |socket| handle_socket(socket, engine))
 }
 
@@ -96,7 +93,7 @@ async fn handle_socket(socket: WebSocket, engine: Arc<GatewayEngine>) {
                             code: "PARSE_ERROR".to_string(),
                             message: format!("Failed to parse request: {}", e),
                         };
-                        
+
                         if let Ok(response_json) = serde_json::to_string(&error_response) {
                             let _ = sender.send(Message::Text(response_json.into())).await;
                         }
@@ -109,7 +106,11 @@ async fn handle_socket(socket: WebSocket, engine: Arc<GatewayEngine>) {
 
                 // Send the response
                 if let Ok(response_json) = serde_json::to_string(&response) {
-                    if sender.send(Message::Text(response_json.into())).await.is_err() {
+                    if sender
+                        .send(Message::Text(response_json.into()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -135,7 +136,7 @@ impl IntoResponse for ApiError {
         let body = Json(serde_json::json!({
             "error": self.message
         }));
-        
+
         (self.code, body).into_response()
     }
 }

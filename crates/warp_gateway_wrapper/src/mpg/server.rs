@@ -71,7 +71,10 @@ impl MpgServer {
             .route("/v1/healthz", get(healthz_handler))
             .route("/v1/models", get(models_handler))
             .route("/v1/chat/completions", post(chat_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_middleware,
+            ));
 
         Router::new()
             // Public health check (no auth) so probes can hit the gateway easily.
@@ -117,9 +120,7 @@ impl MpgServer {
                 if let Some(ready_tx) = ready_tx {
                     let _ = ready_tx.send(Ok(bound_addr));
                 }
-                self.log_listening(bound_addr);
-                axum::serve(listener, self.build_router())
-                    .with_graceful_shutdown(shutdown)
+                self.run_with_listener_and_shutdown(listener, shutdown)
                     .await
             }
             Err(err) => {
@@ -131,11 +132,33 @@ impl MpgServer {
         }
     }
 
+    /// Serve using an already-bound listener. This lets embedders reserve a
+    /// fallback port atomically before spawning the server task.
+    pub async fn run_with_listener_and_shutdown<F>(
+        self,
+        listener: tokio::net::TcpListener,
+        shutdown: F,
+    ) -> Result<(), std::io::Error>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let bound_addr = listener.local_addr().unwrap_or(self.addr);
+        self.log_listening(bound_addr);
+        axum::serve(listener, self.build_router())
+            .with_graceful_shutdown(shutdown)
+            .await
+    }
+
     fn log_listening(&self, bound_addr: SocketAddr) {
         let auth_state = if self.state.config.auth_token.is_empty() {
             "open"
         } else {
             "configured"
+        };
+        let upstream_auth = if self.state.config.provider.resolved_api_key().is_some() {
+            "configured"
+        } else {
+            "missing"
         };
         tracing::info!(
             addr = %bound_addr,
@@ -143,6 +166,7 @@ impl MpgServer {
             adapter = self.state.config.provider.adapter.as_str(),
             wire_api = self.state.config.provider.wire_api.as_str(),
             auth = auth_state,
+            upstream_auth,
             "managed provider gateway listening"
         );
     }
@@ -219,10 +243,7 @@ async fn models_handler(State(state): State<Arc<MpgState>>) -> Json<Value> {
 }
 
 /// `POST /v1/chat/completions`: dispatch to the configured adapter.
-async fn chat_handler(
-    State(state): State<Arc<MpgState>>,
-    body: axum::Json<Value>,
-) -> Response {
+async fn chat_handler(State(state): State<Arc<MpgState>>, body: axum::Json<Value>) -> Response {
     use super::config::Adapter;
     use super::duplicate_guard::DuplicateGuard;
 
@@ -235,15 +256,16 @@ async fn chat_handler(
                 .get("model")
                 .and_then(Value::as_str)
                 .unwrap_or("default");
-            tracing::info!(model, "managed provider gateway suppressed duplicate request");
+            tracing::info!(
+                model,
+                "managed provider gateway suppressed duplicate request"
+            );
             return Json(DuplicateGuard::synthetic_response(model)).into_response();
         }
     }
 
     match state.config.provider.adapter {
-        Adapter::OpenaiChat | Adapter::BridgeOpenai => {
-            forward_chat_completions(state, body).await
-        }
+        Adapter::OpenaiChat | Adapter::BridgeOpenai => forward_chat_completions(state, body).await,
         Adapter::OpenaiResponses => {
             // Apply the same safe-mode strip, then convert chat <-> responses.
             let (processed, info) = super::openai_chat::apply_safe_mode(body.0, &state.config);

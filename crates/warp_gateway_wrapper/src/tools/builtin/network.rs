@@ -1,4 +1,4 @@
-﻿//! HTTP network request tool.
+//! HTTP network request tool.
 //!
 //! Performs an outbound HTTP request and returns the status, headers, and body.
 //! Includes a basic SSRF guard that rejects requests to loopback, private, and
@@ -59,9 +59,9 @@ impl NetworkTool {
             )));
         }
 
-        let host = url.host_str().ok_or_else(|| {
-            GatewayError::InvalidParameters("URL has no host".to_string())
-        })?;
+        let host = url
+            .host_str()
+            .ok_or_else(|| GatewayError::InvalidParameters("URL has no host".to_string()))?;
 
         // Block obvious internal hostnames.
         let lowered = host.to_ascii_lowercase();
@@ -146,7 +146,9 @@ impl Tool for NetworkTool {
         let url_str = parameters
             .get("url")
             .and_then(Value::as_str)
-            .ok_or_else(|| GatewayError::InvalidParameters("Missing 'url' parameter".to_string()))?;
+            .ok_or_else(|| {
+                GatewayError::InvalidParameters("Missing 'url' parameter".to_string())
+            })?;
 
         let url = url::Url::parse(url_str)
             .map_err(|err| GatewayError::InvalidParameters(format!("invalid URL: {err}")))?;
@@ -157,8 +159,9 @@ impl Tool for NetworkTool {
             .and_then(Value::as_str)
             .unwrap_or("GET")
             .to_ascii_uppercase();
-        let method = reqwest::Method::from_bytes(method_str.as_bytes())
-            .map_err(|_| GatewayError::InvalidParameters(format!("invalid method '{method_str}'")))?;
+        let method = reqwest::Method::from_bytes(method_str.as_bytes()).map_err(|_| {
+            GatewayError::InvalidParameters(format!("invalid method '{method_str}'"))
+        })?;
 
         let timeout_ms = parameters
             .get("timeout_ms")
@@ -183,7 +186,9 @@ impl Tool for NetworkTool {
         let response = match timeout(Duration::from_millis(timeout_ms), builder.send()).await {
             Ok(Ok(response)) => response,
             Ok(Err(err)) => {
-                return Err(GatewayError::ExecutionFailed(format!("request failed: {err}")))
+                return Err(GatewayError::ExecutionFailed(format!(
+                    "request failed: {err}"
+                )))
             }
             Err(_) => return Err(GatewayError::Timeout),
         };

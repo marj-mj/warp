@@ -1,4 +1,4 @@
-﻿//! Phase 10: capacity & lifecycle tests.
+//! Phase 10: capacity & lifecycle tests.
 
 use std::time::Duration;
 
@@ -59,7 +59,10 @@ async fn rejects_spawn_when_at_capacity() {
     if let Some(mut rx) = stream_manager.subscribe(&task_id).await {
         let _ = timeout(Duration::from_secs(5), async {
             while let Ok(envelope) = rx.recv().await {
-                if matches!(envelope.event, SSEEvent::Cancelled { .. } | SSEEvent::Complete { .. } | SSEEvent::Error { .. }) {
+                if matches!(
+                    envelope.event,
+                    SSEEvent::Cancelled { .. } | SSEEvent::Complete { .. } | SSEEvent::Error { .. }
+                ) {
                     break;
                 }
             }
@@ -73,7 +76,10 @@ async fn rejects_spawn_when_at_capacity() {
         }
         sleep(Duration::from_millis(50)).await;
     }
-    assert!(!engine.at_capacity().await, "capacity should free after cancellation");
+    assert!(
+        !engine.at_capacity().await,
+        "capacity should free after cancellation"
+    );
 
     let third = engine.spawn_agent(never_finishing_request()).await;
     assert!(matches!(third, SpawnOutcome::Spawned { .. }));
@@ -156,7 +162,10 @@ async fn cleanup_expired_removes_terminal_records() {
         }
         sleep(Duration::from_millis(50)).await;
     }
-    assert!(matches!(state, ExecutionState::Completed | ExecutionState::Failed | ExecutionState::Cancelled));
+    assert!(matches!(
+        state,
+        ExecutionState::Completed | ExecutionState::Failed | ExecutionState::Cancelled
+    ));
 
     let reaped = engine.cleanup_expired().await;
     assert!(reaped >= 1, "should reap at least the completed record");

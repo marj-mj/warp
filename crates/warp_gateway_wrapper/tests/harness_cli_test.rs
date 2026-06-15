@@ -41,8 +41,12 @@ async fn cli_harness_streams_command_output() {
         .spawn_agent(cli_request("HELLO_FROM_CLI", "claude"))
         .await
     {
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => (task_id, run_id),
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => panic!("unexpected at_capacity"),
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => {
+            (task_id, run_id)
+        }
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => {
+            panic!("unexpected at_capacity")
+        }
     };
     let mut receiver = stream_manager.subscribe(&task_id).await.expect("channel");
 
@@ -78,23 +82,36 @@ async fn cli_harness_streams_command_output() {
     std::env::remove_var("WARP_GATEWAY_CLAUDE_CMD");
     std::env::remove_var("WARP_GATEWAY_CLAUDE_ARGS");
 
-    assert!(saw_message, "should stream the echoed line as an assistant message");
+    assert!(
+        saw_message,
+        "should stream the echoed line as an assistant message"
+    );
     assert!(completed, "should emit Complete");
-    assert!(response.contains("HELLO_FROM_CLI"), "final response should include CLI output");
+    assert!(
+        response.contains("HELLO_FROM_CLI"),
+        "final response should include CLI output"
+    );
 }
 
 #[tokio::test]
 async fn cli_harness_reports_launch_failure() {
     // Point at a command that does not exist.
-    std::env::set_var("WARP_GATEWAY_GEMINI_CMD", "definitely-not-a-real-binary-xyz");
+    std::env::set_var(
+        "WARP_GATEWAY_GEMINI_CMD",
+        "definitely-not-a-real-binary-xyz",
+    );
     std::env::set_var("WARP_GATEWAY_GEMINI_ARGS", " ");
 
     let engine = GatewayEngine::new(ToolRegistry::new());
     let stream_manager = engine.stream_manager();
 
     let (task_id, _run_id) = match engine.spawn_agent(cli_request("hi", "gemini")).await {
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => (task_id, run_id),
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => panic!("unexpected at_capacity"),
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => {
+            (task_id, run_id)
+        }
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => {
+            panic!("unexpected at_capacity")
+        }
     };
     let mut receiver = stream_manager.subscribe(&task_id).await.expect("channel");
 

@@ -1,4 +1,4 @@
-﻿//! Provider capability probe.
+//! Provider capability probe.
 //!
 //! Sends minimal requests to an upstream provider to determine which wire APIs
 //! and features it supports, then recommends an adapter / compatibility group /
@@ -102,8 +102,8 @@ pub struct SafeModeDefaults {
 impl CapabilityMatrix {
     /// Derive a recommended configuration from the observed capabilities.
     pub fn recommend(&self) -> Recommendation {
-        let chat_ok =
-            matches!(self.chat_non_stream, ProbeOutcome::Pass) || matches!(self.chat_streaming, ProbeOutcome::Pass);
+        let chat_ok = matches!(self.chat_non_stream, ProbeOutcome::Pass)
+            || matches!(self.chat_streaming, ProbeOutcome::Pass);
         let responses_ok = matches!(self.responses_non_stream, ProbeOutcome::Pass)
             || matches!(self.responses_streaming, ProbeOutcome::Pass);
 
@@ -197,14 +197,18 @@ pub async fn probe_provider(base_url: &str, api_key: Option<&str>) -> Capability
     });
     let (outcome, diag) = probe_once(&client, &chat_url, api_key, &chat_body).await;
     matrix.chat_non_stream = outcome;
-    matrix.diagnostics.push(("chat_completions.non_stream".to_string(), diag));
+    matrix
+        .diagnostics
+        .push(("chat_completions.non_stream".to_string(), diag));
 
     // --- Chat Completions: streaming ---
     let mut chat_stream_body = chat_body.clone();
     chat_stream_body["stream"] = json!(true);
     let (outcome, diag) = probe_once(&client, &chat_url, api_key, &chat_stream_body).await;
     matrix.chat_streaming = outcome;
-    matrix.diagnostics.push(("chat_completions.streaming".to_string(), diag));
+    matrix
+        .diagnostics
+        .push(("chat_completions.streaming".to_string(), diag));
 
     // --- Chat Completions: tools ---
     let mut chat_tools_body = chat_body.clone();
@@ -214,7 +218,9 @@ pub async fn probe_provider(base_url: &str, api_key: Option<&str>) -> Capability
     }]);
     let (outcome, diag) = probe_once(&client, &chat_url, api_key, &chat_tools_body).await;
     matrix.chat_tools = outcome;
-    matrix.diagnostics.push(("chat_completions.tools".to_string(), diag));
+    matrix
+        .diagnostics
+        .push(("chat_completions.tools".to_string(), diag));
 
     // --- Responses: non-stream ---
     let responses_url = format!("{base}/responses");
@@ -225,14 +231,19 @@ pub async fn probe_provider(base_url: &str, api_key: Option<&str>) -> Capability
     });
     let (outcome, diag) = probe_once(&client, &responses_url, api_key, &responses_body).await;
     matrix.responses_non_stream = outcome;
-    matrix.diagnostics.push(("responses.non_stream".to_string(), diag));
+    matrix
+        .diagnostics
+        .push(("responses.non_stream".to_string(), diag));
 
     // --- Responses: streaming ---
     let mut responses_stream_body = responses_body.clone();
     responses_stream_body["stream"] = json!(true);
-    let (outcome, diag) = probe_once(&client, &responses_url, api_key, &responses_stream_body).await;
+    let (outcome, diag) =
+        probe_once(&client, &responses_url, api_key, &responses_stream_body).await;
     matrix.responses_streaming = outcome;
-    matrix.diagnostics.push(("responses.streaming".to_string(), diag));
+    matrix
+        .diagnostics
+        .push(("responses.streaming".to_string(), diag));
 
     // --- Responses: tools ---
     let mut responses_tools_body = responses_body.clone();
@@ -243,7 +254,9 @@ pub async fn probe_provider(base_url: &str, api_key: Option<&str>) -> Capability
     }]);
     let (outcome, diag) = probe_once(&client, &responses_url, api_key, &responses_tools_body).await;
     matrix.responses_tools = outcome;
-    matrix.diagnostics.push(("responses.tools".to_string(), diag));
+    matrix
+        .diagnostics
+        .push(("responses.tools".to_string(), diag));
 
     matrix
 }
@@ -324,6 +337,9 @@ mod tests {
         matrix.chat_non_stream = ProbeOutcome::Pass;
         let value = matrix.to_json();
         assert_eq!(value["recommendation"]["adapter"], "openai_chat");
-        assert_eq!(value["capabilities"]["chat_completions"]["non_stream"], "pass");
+        assert_eq!(
+            value["capabilities"]["chat_completions"]["non_stream"],
+            "pass"
+        );
     }
 }

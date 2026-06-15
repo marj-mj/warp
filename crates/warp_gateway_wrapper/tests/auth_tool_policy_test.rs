@@ -52,8 +52,12 @@ async fn basic_tool_allowed_for_limited_identity() {
         .spawn_agent_with_identity(request("hello"), limited_identity())
         .await
     {
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => (task_id, run_id),
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => panic!("unexpected at_capacity"),
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => {
+            (task_id, run_id)
+        }
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => {
+            panic!("unexpected at_capacity")
+        }
     };
 
     let mut receiver = stream_manager.subscribe(&task_id).await.expect("channel");
@@ -82,6 +86,9 @@ async fn basic_tool_allowed_for_limited_identity() {
         }
     }
 
-    assert!(saw_tool_completed, "echo (basic) should run for limited identity");
+    assert!(
+        saw_tool_completed,
+        "echo (basic) should run for limited identity"
+    );
     assert!(saw_complete);
 }

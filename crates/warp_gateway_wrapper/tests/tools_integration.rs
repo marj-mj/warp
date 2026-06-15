@@ -1,4 +1,4 @@
-﻿//! Integration tests for the shell and filesystem built-in tools executed
+//! Integration tests for the shell and filesystem built-in tools executed
 //! through the GatewayEngine request path.
 
 use std::sync::Arc;
@@ -61,7 +61,10 @@ async fn filesystem_tool_via_engine() {
         .await;
     assert!(matches!(
         write,
-        GatewayResponse::ToolResult { status: ExecutionStatus::Success, .. }
+        GatewayResponse::ToolResult {
+            status: ExecutionStatus::Success,
+            ..
+        }
     ));
 
     let read = engine

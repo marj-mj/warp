@@ -1,4 +1,4 @@
-﻿//! Harness abstraction.
+//! Harness abstraction.
 //!
 //! A *harness* is the execution backend that actually runs an agent for a task.
 //! Mirrors the OZ harness model:
@@ -109,18 +109,36 @@ mod tests {
 
     #[test]
     fn parses_known_harness_types() {
-        assert_eq!(HarnessType::from_str_or_default(Some("oz")), HarnessType::Oz);
-        assert_eq!(HarnessType::from_str_or_default(Some("claude")), HarnessType::Claude);
-        assert_eq!(HarnessType::from_str_or_default(Some("opencode")), HarnessType::Opencode);
-        assert_eq!(HarnessType::from_str_or_default(Some("gemini")), HarnessType::Gemini);
-        assert_eq!(HarnessType::from_str_or_default(Some("codex")), HarnessType::Codex);
+        assert_eq!(
+            HarnessType::from_str_or_default(Some("oz")),
+            HarnessType::Oz
+        );
+        assert_eq!(
+            HarnessType::from_str_or_default(Some("claude")),
+            HarnessType::Claude
+        );
+        assert_eq!(
+            HarnessType::from_str_or_default(Some("opencode")),
+            HarnessType::Opencode
+        );
+        assert_eq!(
+            HarnessType::from_str_or_default(Some("gemini")),
+            HarnessType::Gemini
+        );
+        assert_eq!(
+            HarnessType::from_str_or_default(Some("codex")),
+            HarnessType::Codex
+        );
     }
 
     #[test]
     fn unknown_or_empty_falls_back_to_oz() {
         assert_eq!(HarnessType::from_str_or_default(None), HarnessType::Oz);
         assert_eq!(HarnessType::from_str_or_default(Some("")), HarnessType::Oz);
-        assert_eq!(HarnessType::from_str_or_default(Some("bogus")), HarnessType::Oz);
+        assert_eq!(
+            HarnessType::from_str_or_default(Some("bogus")),
+            HarnessType::Oz
+        );
     }
 
     #[test]

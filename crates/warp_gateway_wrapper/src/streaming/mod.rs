@@ -1,8 +1,8 @@
-﻿// Streaming support for long-running tasks
+// Streaming support for long-running tasks
 // TODO: Implement SSE or WebSocket streaming
 
-use tokio::sync::mpsc;
 use crate::protocol::GatewayResponse;
+use tokio::sync::mpsc;
 
 pub type ProgressSender = mpsc::Sender<GatewayResponse>;
 pub type ProgressReceiver = mpsc::Receiver<GatewayResponse>;

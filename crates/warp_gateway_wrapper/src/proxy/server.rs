@@ -113,7 +113,6 @@ impl ProxyServer {
     }
 }
 
-
 /// If the incoming request is a WebSocket upgrade, route it to the WS handler;
 /// otherwise pass through to the HTTP forwarder.
 async fn ws_dispatch_middleware(

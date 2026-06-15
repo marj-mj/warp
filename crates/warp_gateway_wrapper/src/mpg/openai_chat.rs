@@ -61,10 +61,7 @@ pub struct SafeModeInfo {
 }
 
 /// Forward a Chat Completions request to the upstream and stream the response back.
-pub async fn forward_chat_completions(
-    state: Arc<MpgState>,
-    Json(body): Json<Value>,
-) -> Response {
+pub async fn forward_chat_completions(state: Arc<MpgState>, Json(body): Json<Value>) -> Response {
     let (body, safe_info) = apply_safe_mode(body, &state.config);
     if let Some(info) = &safe_info {
         tracing::info!(
@@ -75,10 +72,7 @@ pub async fn forward_chat_completions(
         );
     }
 
-    let stream_requested = body
-        .get("stream")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let stream_requested = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
 
     let url = format!(
         "{}/chat/completions",
@@ -146,9 +140,9 @@ pub async fn forward_chat_completions(
     }
 
     // For streaming responses, relay chunk-by-chunk so SSE works.
-    let body_stream = upstream.bytes_stream().map(|chunk| {
-        chunk.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
-    });
+    let body_stream = upstream
+        .bytes_stream()
+        .map(|chunk| chunk.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)));
     let body = Body::from_stream(body_stream);
 
     let mut response = Response::new(body);

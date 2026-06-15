@@ -72,10 +72,7 @@ pub async fn ws_handler(
 /// session sharing routes to the sessions root; everything else uses RTC.
 fn build_upstream_ws_url(state: &ProxyState, uri: &Uri) -> Result<String, String> {
     let path = uri.path();
-    let path_and_query = uri
-        .path_and_query()
-        .map(|pq| pq.as_str())
-        .unwrap_or(path);
+    let path_and_query = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or(path);
 
     let root = if path.contains("session") {
         state
@@ -104,7 +101,11 @@ async fn relay(
         .into_client_request()
         .map_err(|err| format!("invalid upstream URL: {err}"))?;
 
-    apply_upstream_headers(request.headers_mut(), &state.config.oz_token, &upstream_headers)?;
+    apply_upstream_headers(
+        request.headers_mut(),
+        &state.config.oz_token,
+        &upstream_headers,
+    )?;
 
     let (upstream_ws, response) = tokio_tungstenite::connect_async(request)
         .await

@@ -1,4 +1,4 @@
-﻿//! Persistent provider store.
+//! Persistent provider store.
 //!
 //! Providers are saved to `%APPDATA%/WarpGatewayLauncher/providers.json`
 //! (platform config dir). For safety, the upstream API key is NEVER written to

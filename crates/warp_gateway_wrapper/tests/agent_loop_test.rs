@@ -37,8 +37,12 @@ async fn agent_loop_runs_tool_and_completes() {
     let request = spawn_request("hello agent", Some("gpt-4.1"));
 
     let (task_id, run_id) = match engine.spawn_agent(request).await {
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => (task_id, run_id),
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => panic!("unexpected at_capacity"),
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => {
+            (task_id, run_id)
+        }
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => {
+            panic!("unexpected at_capacity")
+        }
     };
     assert!(!run_id.is_empty());
 
@@ -88,7 +92,10 @@ async fn agent_loop_runs_tool_and_completes() {
     assert!(saw_tool_started, "should start the echo tool");
     assert!(saw_tool_completed, "should complete the echo tool");
     assert!(saw_complete, "should emit Complete");
-    assert!(final_response.contains("hello agent"), "final response should mention the prompt");
+    assert!(
+        final_response.contains("hello agent"),
+        "final response should mention the prompt"
+    );
 
     let record = engine
         .get_execution_record(&task_id)
@@ -110,8 +117,12 @@ async fn agent_loop_completes_without_tools() {
     let stream_manager = engine.stream_manager();
 
     let (task_id, _run_id) = match engine.spawn_agent(spawn_request("just answer", None)).await {
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => (task_id, run_id),
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => panic!("unexpected at_capacity"),
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => {
+            (task_id, run_id)
+        }
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => {
+            panic!("unexpected at_capacity")
+        }
     };
     let mut receiver = stream_manager.subscribe(&task_id).await.expect("channel");
 
@@ -141,9 +152,16 @@ async fn agent_loop_streams_message_deltas() {
     let engine = GatewayEngine::new(ToolRegistry::new());
     let stream_manager = engine.stream_manager();
 
-    let (task_id, _run_id) = match engine.spawn_agent(spawn_request("stream please", None)).await {
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => (task_id, run_id),
-        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => panic!("unexpected at_capacity"),
+    let (task_id, _run_id) = match engine
+        .spawn_agent(spawn_request("stream please", None))
+        .await
+    {
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::Spawned { task_id, run_id } => {
+            (task_id, run_id)
+        }
+        warp_gateway_wrapper::gateway::engine::SpawnOutcome::AtCapacity => {
+            panic!("unexpected at_capacity")
+        }
     };
     let mut receiver = stream_manager.subscribe(&task_id).await.expect("channel");
 
@@ -175,5 +193,8 @@ async fn agent_loop_streams_message_deltas() {
     }
 
     assert!(delta_count > 0, "should emit at least one MessageDelta");
-    assert!(saw_message_after_deltas, "deltas should be followed by a full Message");
+    assert!(
+        saw_message_after_deltas,
+        "deltas should be followed by a full Message"
+    );
 }

@@ -2,9 +2,8 @@
 //! paste into Warp, spawn Warp pointed at the local gateway, and manage an
 //! optional cloudflared tunnel.
 //!
-//! IMPORTANT: nothing here modifies Warp's files or secure storage. We only
-//! detect (read-only), spawn processes, and build text for the user to paste.
-//! This keeps Warp updatable.
+//! Warp's custom endpoint is updated through its Windows secure-storage format.
+//! This keeps the launcher independent from Warp's source and installed binary.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -12,6 +11,9 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 
 use serde_json::json;
+
+const API_KEYS_STORAGE_KEY: &str = "AiApiKeys";
+const EMPTY_GATEWAY_API_KEY: &str = "warp-gateway";
 
 /// On Windows, prevent a child process from spawning its own console window.
 /// No-op on other platforms.
@@ -47,7 +49,9 @@ fn warp_binary_candidates() -> Vec<PathBuf> {
     }
     // Non-Windows common locations (best-effort).
     #[cfg(target_os = "macos")]
-    candidates.push(PathBuf::from("/Applications/Warp.app/Contents/MacOS/stable"));
+    candidates.push(PathBuf::from(
+        "/Applications/Warp.app/Contents/MacOS/stable",
+    ));
     #[cfg(target_os = "linux")]
     {
         candidates.push(PathBuf::from("/usr/bin/warp-terminal"));
@@ -59,7 +63,9 @@ fn warp_binary_candidates() -> Vec<PathBuf> {
 
 /// Detect an installed Warp binary, returning the first existing candidate.
 pub fn detect_warp() -> Option<PathBuf> {
-    warp_binary_candidates().into_iter().find(|path| path.is_file())
+    warp_binary_candidates()
+        .into_iter()
+        .find(|path| path.is_file())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +78,10 @@ pub enum ServerUrlOverrideSupport {
 /// Best-effort classification of whether the detected Warp build is likely to
 /// honor the `WARP_*SERVER_URL` overrides needed by proxy mode.
 pub fn detect_server_url_override_support(path: &Path) -> ServerUrlOverrideSupport {
-    let normalized = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
 
     if normalized.contains("warpdev")
         || normalized.contains("warplocal")
@@ -140,6 +149,186 @@ pub fn endpoint_config_json(name: &str, endpoint_url: &str, model: &str) -> Stri
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
 
+fn managed_endpoint_name(name: &str) -> String {
+    let name = name.trim();
+    if name.is_empty() {
+        "@gateway Managed Provider Gateway".to_string()
+    } else if name.starts_with("@gateway") {
+        name.to_string()
+    } else {
+        format!("@gateway {name}")
+    }
+}
+
+#[cfg(windows)]
+fn warp_storage_location(warp: &Path) -> Result<PathBuf, String> {
+    let normalized = warp
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    let (application, services): (&str, &[&str]) = if normalized.contains("warppreview") {
+        (
+            "WarpPreview",
+            &["dev.warp.WarpPreview", "dev.warp.Warp-Preview"],
+        )
+    } else if normalized.contains("warpdev") {
+        ("WarpDev", &["dev.warp.WarpDev", "dev.warp.Warp-Dev"])
+    } else {
+        ("Warp", &["dev.warp.Warp"])
+    };
+    let local = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or_else(|| "LOCALAPPDATA is not available".to_string())?;
+    let storage_dir = local.join("warp").join(application).join("data");
+    Ok(services
+        .iter()
+        .map(|service| storage_dir.join(format!("{service}-{API_KEYS_STORAGE_KEY}")))
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| storage_dir.join(format!("{}-{API_KEYS_STORAGE_KEY}", services[0]))))
+}
+
+#[cfg(windows)]
+fn decrypt_warp_storage(encrypted_bytes: Vec<u8>) -> Result<String, String> {
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+    use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
+
+    let mut encrypted_bytes = encrypted_bytes;
+    let encrypted_blob = CRYPT_INTEGER_BLOB {
+        cbData: encrypted_bytes.len() as u32,
+        pbData: encrypted_bytes.as_mut_ptr(),
+    };
+    let mut decrypted_blob = CRYPT_INTEGER_BLOB::default();
+    unsafe {
+        CryptUnprotectData(
+            &encrypted_blob,
+            None,
+            None,
+            None,
+            None,
+            0,
+            &mut decrypted_blob,
+        )
+        .map_err(|err| format!("failed to decrypt Warp API keys: {err}"))?;
+        let bytes =
+            std::slice::from_raw_parts(decrypted_blob.pbData, decrypted_blob.cbData as usize)
+                .to_vec();
+        LocalFree(Some(HLOCAL(decrypted_blob.pbData.cast())));
+        String::from_utf8(bytes).map_err(|err| format!("Warp API keys are not UTF-8: {err}"))
+    }
+}
+
+#[cfg(windows)]
+fn encrypt_warp_storage(plaintext: &str) -> Result<Vec<u8>, String> {
+    use windows::core::BSTR;
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+    use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
+
+    let mut plaintext = plaintext.as_bytes().to_vec();
+    let plaintext_blob = CRYPT_INTEGER_BLOB {
+        cbData: plaintext.len() as u32,
+        pbData: plaintext.as_mut_ptr(),
+    };
+    let mut encrypted_blob = CRYPT_INTEGER_BLOB::default();
+    unsafe {
+        CryptProtectData(
+            &plaintext_blob,
+            &BSTR::from(API_KEYS_STORAGE_KEY),
+            None,
+            None,
+            None,
+            0,
+            &mut encrypted_blob,
+        )
+        .map_err(|err| format!("failed to encrypt Warp API keys: {err}"))?;
+        let bytes =
+            std::slice::from_raw_parts(encrypted_blob.pbData, encrypted_blob.cbData as usize)
+                .to_vec();
+        LocalFree(Some(HLOCAL(encrypted_blob.pbData.cast())));
+        Ok(bytes)
+    }
+}
+
+/// Upsert the launcher's custom endpoint in Warp's Windows DPAPI storage.
+///
+/// Existing provider keys and unrelated custom endpoints are preserved.
+#[cfg(windows)]
+pub fn upsert_warp_gateway_endpoint(
+    warp: &Path,
+    name: &str,
+    endpoint_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+) -> Result<(), String> {
+    let storage_file = warp_storage_location(warp)?;
+    let mut keys: serde_json::Value = if storage_file.is_file() {
+        let encrypted = std::fs::read(&storage_file)
+            .map_err(|err| format!("failed to read Warp API keys: {err}"))?;
+        let json = decrypt_warp_storage(encrypted)?;
+        serde_json::from_str(&json)
+            .map_err(|err| format!("failed to parse Warp API keys: {err}"))?
+    } else {
+        json!({})
+    };
+
+    let name = managed_endpoint_name(name);
+    let model = if model.trim().is_empty() {
+        "default-model"
+    } else {
+        model.trim()
+    };
+    let endpoint = json!({
+        "name": name,
+        "url": endpoint_url.trim().trim_end_matches('/'),
+        "api_key": api_key
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .unwrap_or(EMPTY_GATEWAY_API_KEY)
+            .to_string(),
+        "models": [{
+            "name": model,
+            "alias": null,
+            "config_key": model,
+        }],
+    });
+    let root = keys
+        .as_object_mut()
+        .ok_or_else(|| "Warp API keys payload is not a JSON object".to_string())?;
+    let endpoints = root
+        .entry("custom_endpoints")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or_else(|| "Warp custom_endpoints payload is not a JSON array".to_string())?;
+    if let Some(existing) = endpoints
+        .iter_mut()
+        .find(|existing| existing.get("name").and_then(|value| value.as_str()) == Some(&name))
+    {
+        *existing = endpoint;
+    } else {
+        endpoints.push(endpoint);
+    }
+
+    let json = serde_json::to_string(&keys)
+        .map_err(|err| format!("failed to serialize Warp API keys: {err}"))?;
+    let encrypted = encrypt_warp_storage(&json)?;
+    if let Some(parent) = storage_file.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create Warp data directory: {err}"))?;
+    }
+    std::fs::write(&storage_file, encrypted)
+        .map_err(|err| format!("failed to update Warp API keys: {err}"))
+}
+
+#[cfg(not(windows))]
+pub fn upsert_warp_gateway_endpoint(
+    _warp: &Path,
+    _name: &str,
+    _endpoint_url: &str,
+    _api_key: Option<&str>,
+    _model: &str,
+) -> Result<(), String> {
+    Err("automatic Warp endpoint configuration is currently supported on Windows only".to_string())
+}
+
 /// Spawn Warp with `WARP_SERVER_ROOT_URL` pointed at the proxy (only relevant
 /// for the transparent-proxy mode, not MPG). Read-only env injection; no source
 /// changes.
@@ -175,14 +364,36 @@ pub fn spawn_warp_with_proxy_urls(
         .map_err(|err| format!("failed to launch Warp: {err}"))
 }
 
-/// Launch Warp normally (no env override). Used by "Launch all" since the
-/// Managed Provider Gateway flow relies on a custom endpoint configured inside
-/// Warp, not an env var.
+/// Launch Warp normally after the launcher has updated its endpoint storage.
 pub fn spawn_warp(warp: &PathBuf) -> Result<(), String> {
     Command::new(warp)
         .spawn()
         .map(|_| ())
         .map_err(|err| format!("failed to launch Warp: {err}"))
+}
+
+#[cfg(windows)]
+pub fn is_warp_running(warp: &Path) -> Result<bool, String> {
+    let executable = warp
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Warp executable path has no file name".to_string())?;
+    let mut command = Command::new("tasklist");
+    command.args(["/FI", &format!("IMAGENAME eq {executable}"), "/NH"]);
+    no_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| format!("failed to inspect running Warp processes: {err}"))?;
+    if !output.status.success() {
+        return Err("failed to inspect running Warp processes".to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+    Ok(stdout.contains(&executable.to_ascii_lowercase()))
+}
+
+#[cfg(not(windows))]
+pub fn is_warp_running(_warp: &Path) -> Result<bool, String> {
+    Ok(false)
 }
 
 /// Resolve a cloudflared binary: explicit override, PATH, or known install dirs.
@@ -254,7 +465,10 @@ impl Drop for CloudflaredTunnel {
 
 /// Spawn `cloudflared tunnel --url http://127.0.0.1:<port>`, capturing output
 /// to extract the public trycloudflare.com URL.
-pub fn start_cloudflared_tunnel(cloudflared: &PathBuf, port: u16) -> Result<CloudflaredTunnel, String> {
+pub fn start_cloudflared_tunnel(
+    cloudflared: &PathBuf,
+    port: u16,
+) -> Result<CloudflaredTunnel, String> {
     let url = format!("http://127.0.0.1:{port}");
     let mut command = Command::new(cloudflared);
     command

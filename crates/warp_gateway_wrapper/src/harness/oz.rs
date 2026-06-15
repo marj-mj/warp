@@ -1,4 +1,4 @@
-﻿//! The built-in `oz` harness: the gateway's native agent loop.
+//! The built-in `oz` harness: the gateway's native agent loop.
 //!
 //! Drives an LLM provider, executes requested tool calls through the gateway,
 //! feeds results back, and streams progress/messages/tool events over SSE until
@@ -124,7 +124,9 @@ impl Harness for OzHarness {
 
         // Surface any attachments to the model as a system-context message.
         if !request.attachments.is_empty() {
-            messages.push(ChatMessage::system(format_attachments(&request.attachments)));
+            messages.push(ChatMessage::system(format_attachments(
+                &request.attachments,
+            )));
         }
 
         messages.push(ChatMessage::user(if prompt.is_empty() {
@@ -150,7 +152,11 @@ impl Harness for OzHarness {
                     )
                     .await;
                 engine
-                    .fail_execution(&task_id, "cancelled", "Task cancelled during execution".to_string())
+                    .fail_execution(
+                        &task_id,
+                        "cancelled",
+                        "Task cancelled during execution".to_string(),
+                    )
                     .await;
                 engine.finish_stream(&task_id).await;
                 return;

@@ -1,4 +1,4 @@
-﻿//! Duplicate-request guard.
+//! Duplicate-request guard.
 //!
 //! Warp/Agent occasionally re-issues an identical request after a stream ends,
 //! which can spam the upstream provider and burn tokens. The guard fingerprints
@@ -126,14 +126,20 @@ mod tests {
     fn identical_bodies_share_fingerprint() {
         let a = json!({"model": "m", "messages": [{"role": "user", "content": "hi"}]});
         let b = json!({"model": "m", "messages": [{"role": "user", "content": "hi"}]});
-        assert_eq!(DuplicateGuard::fingerprint(&a), DuplicateGuard::fingerprint(&b));
+        assert_eq!(
+            DuplicateGuard::fingerprint(&a),
+            DuplicateGuard::fingerprint(&b)
+        );
     }
 
     #[test]
     fn different_content_differs() {
         let a = json!({"model": "m", "messages": [{"role": "user", "content": "hi"}]});
         let b = json!({"model": "m", "messages": [{"role": "user", "content": "bye"}]});
-        assert_ne!(DuplicateGuard::fingerprint(&a), DuplicateGuard::fingerprint(&b));
+        assert_ne!(
+            DuplicateGuard::fingerprint(&a),
+            DuplicateGuard::fingerprint(&b)
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -48,7 +48,10 @@ impl StreamManager {
 
     /// Create a new broadcast channel for a task.
     pub async fn create_channel(&self, task_id: TaskId) -> broadcast::Sender<StreamEnvelope> {
-        let stream = Arc::new(TaskStream::new(self.channel_capacity, self.history_capacity));
+        let stream = Arc::new(TaskStream::new(
+            self.channel_capacity,
+            self.history_capacity,
+        ));
         let sender = stream.sender.clone();
         self.channels.write().await.insert(task_id, stream);
         sender
@@ -57,7 +60,9 @@ impl StreamManager {
     /// Subscribe to a task's live event stream.
     pub async fn subscribe(&self, task_id: &TaskId) -> Option<broadcast::Receiver<StreamEnvelope>> {
         let channels = self.channels.read().await;
-        channels.get(task_id).map(|stream| stream.sender.subscribe())
+        channels
+            .get(task_id)
+            .map(|stream| stream.sender.subscribe())
     }
 
     /// Send an event to a task's stream, assigning it the next sequence id and
@@ -170,14 +175,8 @@ mod tests {
         let task_id = TaskId::new();
         manager.create_channel(task_id.clone()).await;
 
-        let id1 = manager
-            .send_event(&task_id, SSEEvent::Ping)
-            .await
-            .unwrap();
-        let id2 = manager
-            .send_event(&task_id, SSEEvent::Ping)
-            .await
-            .unwrap();
+        let id1 = manager.send_event(&task_id, SSEEvent::Ping).await.unwrap();
+        let id2 = manager.send_event(&task_id, SSEEvent::Ping).await.unwrap();
         assert_eq!(id1, 1);
         assert_eq!(id2, 2);
     }

@@ -1,13 +1,17 @@
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
 use warp_gateway_wrapper::http::auth::{AuthConfig, TokenEntry};
-use warp_gateway_wrapper::mpg::{Adapter, GatewayConfig as MpgGatewayConfig, MpgServer, ProviderConfig, WireApi};
 use warp_gateway_wrapper::mpg::config::ProvidersFile;
+use warp_gateway_wrapper::mpg::{
+    Adapter, GatewayConfig as MpgGatewayConfig, MpgServer, ProviderConfig, WireApi,
+};
 use warp_gateway_wrapper::proxy::{ProxyConfig, ProxyServer, WarpChannel};
 use warp_gateway_wrapper::tools::builtin::{
     EchoTool, FilesystemTool, LongRunningTool, NetworkTool, ShellTool, SystemInfoTool,
 };
-use warp_gateway_wrapper::{GatewayEngine, HttpAdapter, Server, ServerConfig, StdioAdapter, ToolRegistry};
+use warp_gateway_wrapper::{
+    GatewayEngine, HttpAdapter, Server, ServerConfig, StdioAdapter, ToolRegistry,
+};
 
 #[derive(Parser)]
 #[command(name = "warp-gateway-wrapper")]
@@ -164,13 +168,9 @@ fn auth_config_from_env() -> AuthConfig {
 /// RUST_LOG env var (defaults to info).
 fn init_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     // Ignore the error if a global subscriber is already set (e.g. in tests).
-    let _ = fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .try_init();
+    let _ = fmt().with_env_filter(filter).with_target(false).try_init();
 }
 
 #[tokio::main]
@@ -191,7 +191,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let adapter = HttpAdapter::new(engine);
             adapter.serve(socket_addr).await?;
         }
-        Commands::Serve { host, port, no_auth } => {
+        Commands::Serve {
+            host,
+            port,
+            no_auth,
+        } => {
             let engine = Arc::new(GatewayEngine::new(build_registry()));
             let auth_config = if no_auth {
                 tracing::warn!("starting agent server with authentication DISABLED");
@@ -234,7 +238,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let name = provider.clone().ok_or_else(|| {
                     String::from("--provider <name> required when --config is set")
                 })?;
-                ProvidersFile::pick(&path, &name).map_err(|err| Box::<dyn std::error::Error>::from(err))?
+                ProvidersFile::pick(&path, &name)
+                    .map_err(|err| Box::<dyn std::error::Error>::from(err))?
             } else {
                 ProviderConfig {
                     name: provider.clone().unwrap_or_else(|| "upstream".to_string()),
@@ -248,11 +253,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             // Apply CLI overrides on top of JSON defaults.
-            if let Some(value) = upstream_base_url { provider_cfg.base_url = value; }
-            if upstream_env_key.is_some() { provider_cfg.env_key = upstream_env_key; }
-            if let Some(value) = upstream_model { provider_cfg.model = Some(value); }
+            if let Some(value) = upstream_base_url {
+                provider_cfg.base_url = value;
+            }
+            if upstream_env_key.is_some() {
+                provider_cfg.env_key = upstream_env_key;
+            }
+            if let Some(value) = upstream_model {
+                provider_cfg.model = Some(value);
+            }
             if let Some(value) = upstream_wire_api {
-                provider_cfg.wire_api = if value == "responses" { WireApi::Responses } else { WireApi::Chat };
+                provider_cfg.wire_api = if value == "responses" {
+                    WireApi::Responses
+                } else {
+                    WireApi::Chat
+                };
             }
             if let Some(value) = upstream_adapter {
                 provider_cfg.adapter = match value.as_str() {
@@ -283,7 +298,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::MpgProbe { base_url, env_key } => {
             let api_key = env_key.and_then(|name| std::env::var(name).ok());
             let matrix =
-                warp_gateway_wrapper::mpg::probe::probe_provider(&base_url, api_key.as_deref()).await;
+                warp_gateway_wrapper::mpg::probe::probe_provider(&base_url, api_key.as_deref())
+                    .await;
             let output = serde_json::to_string_pretty(&matrix.to_json())
                 .unwrap_or_else(|_| "{}".to_string());
             println!("{output}");

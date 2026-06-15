@@ -112,7 +112,9 @@ impl Tool for ShellTool {
 
         let child = Self::build_command(command, cwd, env)
             .spawn()
-            .map_err(|err| GatewayError::ExecutionFailed(format!("failed to spawn command: {err}")))?;
+            .map_err(|err| {
+                GatewayError::ExecutionFailed(format!("failed to spawn command: {err}"))
+            })?;
 
         let wait_for_output = async {
             child.wait_with_output().await.map_err(|err| {
@@ -218,7 +220,11 @@ mod tests {
         let token = CancellationToken::new();
         let ctx = ToolContext::new(TaskId::new(), token.clone());
         token.cancel();
-        let command = if cfg!(windows) { "ping -n 5 127.0.0.1 >NUL" } else { "sleep 5" };
+        let command = if cfg!(windows) {
+            "ping -n 5 127.0.0.1 >NUL"
+        } else {
+            "sleep 5"
+        };
         let err = tool
             .execute(ctx, json!({ "command": command, "timeout_ms": 5000 }))
             .await

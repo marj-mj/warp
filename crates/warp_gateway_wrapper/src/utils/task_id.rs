@@ -1,5 +1,5 @@
-﻿use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -9,7 +9,7 @@ impl TaskId {
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
     }
-    
+
     pub fn from_string(s: String) -> Result<Self, String> {
         // Basic validation
         if s.is_empty() {
@@ -17,7 +17,7 @@ impl TaskId {
         }
         Ok(Self(s))
     }
-    
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

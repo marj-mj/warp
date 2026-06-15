@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::routing::{get, post as axum_post};
 use axum::{
     body::Body,
     extract::{Json, Request, State},
@@ -20,7 +21,6 @@ use tokio::net::TcpListener;
 use warp_gateway_wrapper::mpg::{
     Adapter, GatewayConfig as MpgGatewayConfig, MpgServer, ProviderConfig, WireApi,
 };
-use axum::routing::{get, post as axum_post};
 
 #[derive(Default, Clone)]
 struct UpstreamCapture {
@@ -40,10 +40,7 @@ async fn capture_chat(State(state): State<UpstreamCapture>, request: Request) ->
         .await
         .unwrap_or_default();
     let body: Value = serde_json::from_slice(&body_bytes).unwrap_or(Value::Null);
-    let stream_requested = body
-        .get("stream")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let stream_requested = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
     *state.last_body.lock().unwrap() = Some(body);
 
     if stream_requested {
@@ -88,11 +85,7 @@ async fn start_upstream() -> (String, UpstreamCapture) {
     (format!("http://{addr}/v1"), state)
 }
 
-async fn start_gateway(
-    upstream_url: String,
-    auth_token: &str,
-    disable_tools: bool,
-) -> String {
+async fn start_gateway(upstream_url: String, auth_token: &str, disable_tools: bool) -> String {
     let mut cfg = MpgGatewayConfig::new(ProviderConfig {
         name: "test".into(),
         base_url: upstream_url,
@@ -255,7 +248,6 @@ async fn auth_token_gates_protected_endpoints() {
     assert_eq!(authed.status(), 200);
 }
 
-
 // ── Adapters: responses, anthropic, gemini ─────────────────────────────────
 
 /// Start a multi-endpoint upstream that serves responses / anthropic / gemini.
@@ -375,7 +367,9 @@ async fn duplicate_guard_suppresses_second_identical_request() {
     let addr: SocketAddr = listener.local_addr().unwrap();
     drop(listener);
     let server = MpgServer::new("127.0.0.1", addr.port(), cfg).unwrap();
-    tokio::spawn(async move { let _ = server.run().await; });
+    tokio::spawn(async move {
+        let _ = server.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(50)).await;
     let gateway = format!("http://{addr}");
 
@@ -383,14 +377,24 @@ async fn duplicate_guard_suppresses_second_identical_request() {
     let first: Value = reqwest::Client::new()
         .post(format!("{gateway}/v1/chat/completions"))
         .json(&payload)
-        .send().await.unwrap().json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     // First goes upstream -> content "ok".
     assert_eq!(first["choices"][0]["message"]["content"], "ok");
 
     let second: Value = reqwest::Client::new()
         .post(format!("{gateway}/v1/chat/completions"))
         .json(&payload)
-        .send().await.unwrap().json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     // Second within window -> synthetic suppressed response.
     assert_eq!(second["x_managed_gateway"]["duplicate_suppressed"], true);
 }
